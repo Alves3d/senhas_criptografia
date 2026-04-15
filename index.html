@@ -393,11 +393,14 @@ function init(){
 // ================================================================
 //  TELEGRAM
 // ================================================================
-const TG_KEY='nfcv2_tg';
 function getTgConfig(){
-  try{return JSON.parse(localStorage.getItem(TG_KEY)||'{}');}catch{return {};}
+  return S.vault?.telegram||{};
 }
-function saveTgConfig(o){localStorage.setItem(TG_KEY,JSON.stringify(o));}
+async function saveTgConfig(o){
+  if(!S.vault)return;
+  S.vault.telegram=o;
+  await persist();
+}
 
 async function sendTelegram(token,chatId,blob){
   const date=new Date().toISOString().slice(0,10);
@@ -970,11 +973,11 @@ function bind(){
   on('btn-ck',()=>{clip(S.key);toast('Chave copiada!','s');});
 
   // ---- TGCONFIG ----
-  on('btn-tg-save',()=>{
+  on('btn-tg-save',async()=>{
     const token=($('tg-token')?.value||'').trim();
     const chatId=($('tg-chatid')?.value||'').trim();
     if(!token||!chatId){toast('Preencha token e chat ID','e');return;}
-    saveTgConfig({token,chatId});
+    await saveTgConfig({token,chatId});
     toast('Configuração salva ✓','s');
     S.screen='export';S.error=null;render();
   });
@@ -991,9 +994,9 @@ function bind(){
       if(btn){btn.disabled=false;btn.textContent='🧪 Testar envio';}
     }
   });
-  on('btn-tg-del',()=>{
+  on('btn-tg-del',async()=>{
     if(!confirm('Remover configuração do Telegram?'))return;
-    localStorage.removeItem(TG_KEY);
+    await saveTgConfig({});
     toast('Configuração removida','s');
     S.screen='export';render();
   });
