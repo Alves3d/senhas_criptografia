@@ -391,12 +391,32 @@ function init(){
 }
 
 // ================================================================
+//  TELEGRAM
+// ================================================================
+const TG_KEY='nfcv2_tg';
+function getTgConfig(){
+  try{return JSON.parse(localStorage.getItem(TG_KEY)||'{}');}catch{return {};}
+}
+function saveTgConfig(o){localStorage.setItem(TG_KEY,JSON.stringify(o));}
+
+async function sendTelegram(token,chatId,blob){
+  const date=new Date().toISOString().slice(0,10);
+  const fd=new FormData();
+  fd.append('chat_id',chatId);
+  fd.append('caption',`🔐 NFC Vault — backup ${date}`);
+  fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));
+  const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});
+  const j=await r.json();
+  if(!j.ok)throw new Error(j.description||'Erro ao enviar');
+}
+
+// ================================================================
 //  RENDER
 // ================================================================
 function render(){
   document.getElementById('app').innerHTML={
     loading:rLoad, setup:rSetup, locked:rLocked,
-    vault:rVault, add:rAdd, export:rExport, users:rUsers
+    vault:rVault, add:rAdd, export:rExport, users:rUsers, tgconfig:rTgConfig
   }[S.screen]?.()??rLoad();
   bind();
 }
@@ -615,6 +635,7 @@ function rAdd(){
 }
 
 function rExport(){
+  const tg=getTgConfig();
   return`
 <div class="screen">
   <div class="tbar">
@@ -629,6 +650,17 @@ function rExport(){
       <button class="btn btn-p" id="btn-dl">⬇️ Baixar vault.nfcv</button>
     </div>
     <div class="card">
+      <h3>✈️ Backup via Telegram</h3>
+      <p style="margin-bottom:10px">${tg.token&&tg.chatId
+        ?'Envia o vault criptografado direto para o seu Telegram.'
+        :'Configure o bot do Telegram para habilitar o backup automático.'}</p>
+      ${tg.token&&tg.chatId
+        ?`<button class="btn btn-g" id="btn-tg">📨 Enviar para o Telegram</button>
+           <button class="btn-txt" id="btn-tg-cfg">⚙️ Reconfigurar bot</button>`
+        :`<button class="btn btn-o" id="btn-tg-cfg">⚙️ Configurar bot Telegram</button>`
+      }
+    </div>
+    <div class="card">
       <h3>📥 Importar vault</h3>
       <p>Carregue um arquivo <code>.nfcv</code> exportado anteriormente. Substituirá o vault atual neste dispositivo.</p>
       <input type="file" id="f-im" accept=".nfcv,.txt" style="display:none">
@@ -640,6 +672,43 @@ function rExport(){
       <div class="key-box sm">${S.key}</div>
       <button class="btn btn-o" id="btn-ck">📋 Copiar chave</button>
     </div>
+  </div>
+</div>`;}
+
+function rTgConfig(){
+  const tg=getTgConfig();
+  return`
+<div class="screen">
+  <div class="tbar">
+    <div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div>
+    <div class="tbar-title">✈️ Configurar Telegram</div>
+    <div class="tbar-side"></div>
+  </div>
+  <div style="padding:14px 14px 0">
+    <div class="steps" style="padding:0;margin-bottom:14px">
+      <div class="step"><div class="step-n">1</div>
+        <div>Abra o Telegram → busque <strong>@BotFather</strong> → digite <code>/newbot</code> → siga as instruções → copie o <strong>token</strong></div></div>
+      <div class="step"><div class="step-n">2</div>
+        <div>Busque o seu bot recém-criado → clique em <strong>Start</strong></div></div>
+      <div class="step"><div class="step-n">3</div>
+        <div>Acesse <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> no navegador → copie o valor de <strong>id</strong> dentro de <em>chat</em></div></div>
+      <div class="step"><div class="step-n">4</div>
+        <div>Cole os dados abaixo e salve</div></div>
+    </div>
+    <div class="ig" style="margin-bottom:12px">
+      <label>Token do Bot</label>
+      <input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxxxxxxxxxxxxxxx"
+        value="${esc(tg.token||'')}" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="ig" style="margin-bottom:14px">
+      <label>Chat ID</label>
+      <input type="text" id="tg-chatid" class="mono-in" placeholder="986603726"
+        value="${esc(tg.chatId||'')}" autocomplete="off">
+    </div>
+    <button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>
+    ${tg.token?`<button class="btn btn-o" id="btn-tg-test" style="margin-top:6px">🧪 Testar envio</button>`:''}
+    ${tg.token?`<button class="btn btn-r" id="btn-tg-del" style="margin-top:6px">🗑️ Remover configuração</button>`:''}
+    ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
   </div>
 </div>`;
 }
@@ -872,6 +941,21 @@ function bind(){
     a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;
     a.click();
   });
+  on('btn-tg-cfg',()=>{S.error=null;S.screen='tgconfig';render();});
+  on('btn-tg',async()=>{
+    const tg=getTgConfig();
+    if(!tg.token||!tg.chatId){toast('Configure o bot primeiro','e');return;}
+    const btn=document.getElementById('btn-tg');
+    if(btn){btn.disabled=true;btn.textContent='⏳ Enviando…';}
+    try{
+      await sendTelegram(tg.token,tg.chatId,getBlob());
+      toast('Backup enviado para o Telegram ✓','s');
+    }catch(e){
+      toast('Erro: '+e.message,'e');
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent='📨 Enviar para o Telegram';}
+    }
+  });
   on('btn-im',()=>$('f-im')?.click());
   $('f-im')?.addEventListener('change',e=>{
     const f=e.target.files[0];if(!f)return;
@@ -884,6 +968,35 @@ function bind(){
     r.readAsText(f);
   });
   on('btn-ck',()=>{clip(S.key);toast('Chave copiada!','s');});
+
+  // ---- TGCONFIG ----
+  on('btn-tg-save',()=>{
+    const token=($('tg-token')?.value||'').trim();
+    const chatId=($('tg-chatid')?.value||'').trim();
+    if(!token||!chatId){toast('Preencha token e chat ID','e');return;}
+    saveTgConfig({token,chatId});
+    toast('Configuração salva ✓','s');
+    S.screen='export';S.error=null;render();
+  });
+  on('btn-tg-test',async()=>{
+    const tg=getTgConfig();
+    const btn=document.getElementById('btn-tg-test');
+    if(btn){btn.disabled=true;btn.textContent='⏳ Testando…';}
+    try{
+      await sendTelegram(tg.token,tg.chatId,getBlob());
+      toast('Teste enviado com sucesso ✓','s');
+    }catch(e){
+      S.error='Erro: '+e.message;render();
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent='🧪 Testar envio';}
+    }
+  });
+  on('btn-tg-del',()=>{
+    if(!confirm('Remover configuração do Telegram?'))return;
+    localStorage.removeItem(TG_KEY);
+    toast('Configuração removida','s');
+    S.screen='export';render();
+  });
 }
 
 // ================================================================
