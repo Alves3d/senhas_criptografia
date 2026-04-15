@@ -78,10 +78,21 @@ Pronto! O vault está criado e você já está dentro.
 
 ### Adicionar senha
 
+> ⚠️ Cadastre pelo menos um usuário antes de adicionar senhas (veja seção abaixo).
+
 1. Toque no botão **+** (canto inferior direito)
-2. Preencha: nome do serviço, usuário/e-mail, senha, URL e o dono (Matheus / Pai / Mãe)
+2. Preencha: nome do serviço, usuário/e-mail, senha, URL e selecione o dono
 3. Use o botão 🎲 para gerar uma senha segura automaticamente
 4. Clique em **"Adicionar senha"**
+
+### Gerenciar usuários
+
+Os usuários são as pessoas que vão usar o vault. Cada senha é vinculada a um usuário, permitindo filtrar por pessoa.
+
+1. Na tela principal, toque no botão **👥** (canto superior esquerdo)
+2. Digite o nome e clique em **"+ Adicionar usuário"**
+3. Repita para cada pessoa (ex: Matheus, Pai, Mãe, etc.)
+4. Para editar ou remover, use os ícones ✏️ e 🗑️ ao lado de cada usuário
 
 ### Outras ações
 
@@ -89,9 +100,10 @@ Pronto! O vault está criado e você já está dentro.
 |---|---|
 | Ver senha | Toque no ícone 👁️ na listagem |
 | Copiar senha | Toque no ícone 📋 |
-| Editar | Toque no card da senha |
-| Excluir | Ícone 🗑️ no card ou dentro da edição |
-| Filtrar por dono | Abas no topo: Todos / Matheus / Pai / Mãe |
+| Editar senha | Toque no card da senha |
+| Excluir senha | Ícone 🗑️ no card ou dentro da edição |
+| Filtrar por usuário | Abas no topo: Todos / nome de cada usuário |
+| Gerenciar usuários | Botão 👥 no canto superior esquerdo |
 | Bloquear | Botão 🔒 no canto superior direito |
 
 ---
