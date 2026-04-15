@@ -253,7 +253,8 @@ code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
 const S={
   screen:'loading', vault:null, key:null,
   editId:null, editUserId:null, error:null, scanning:false,
-  showP:{}, filter:'Todos', genKey:null
+  showP:{}, filter:'Todos', genKey:null,
+  setupTab:'new', setupImported:false
 };
 const BADGE_COLORS=[
   {bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},
@@ -413,6 +414,15 @@ function rSetup(){
     <div class="hdr-sub">Configuração inicial</div>
   </div>
 
+  <div style="padding:0 14px;margin-bottom:4px">
+    <p style="font-size:13px;color:var(--text2);margin-bottom:10px">Escolha uma opção:</p>
+    <div class="btn-row">
+      <button class="btn btn-p" id="btn-tab-new" style="${!S.setupTab||S.setupTab==='new'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">🆕 Vault novo</button>
+      <button class="btn btn-p" id="btn-tab-imp" style="${S.setupTab==='imp'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">📥 Já tenho um vault</button>
+    </div>
+  </div>
+
+  ${(!S.setupTab||S.setupTab==='new')?`
   <div class="steps">
     <div class="step"><div class="step-n">1</div>
       <div>Gere a <strong>chave de segurança</strong> abaixo</div></div>
@@ -421,11 +431,9 @@ function rSetup(){
     <div class="step"><div class="step-n">3</div>
       <div>Volte aqui e clique em <strong>"Criar Vault"</strong></div></div>
   </div>
-
   <div style="padding:6px 14px 0">
     <button class="btn btn-o" id="btn-gen">⚡ Gerar chave aleatória</button>
   </div>
-
   <div id="ksec" style="${S.genKey?'':'display:none'};padding:0 14px;margin-top:2px">
     <div class="key-box" id="kval" title="Clique para selecionar">${S.genKey||''}</div>
     <div class="btn-row">
@@ -433,6 +441,27 @@ function rSetup(){
     </div>
     <button class="btn btn-g" id="btn-crt" style="margin-top:14px">✓ Já gravei na tag — Criar Vault</button>
   </div>
+  `:`
+  <div style="padding:0 14px">
+    <div class="card" style="margin:0 0 10px">
+      <p style="font-size:13px;color:var(--text2);line-height:1.6">Selecione o arquivo <code>.nfcv</code> exportado anteriormente. Depois desbloqueie com a tag NFC ou digitando a chave.</p>
+    </div>
+    <input type="file" id="f-im-setup" accept=".nfcv,.txt" style="display:none">
+    <button class="btn btn-o" id="btn-im-setup">📂 Selecionar arquivo .nfcv</button>
+    ${S.setupImported?`<div style="margin-top:8px;color:var(--green);font-size:13px">✓ Arquivo carregado! Agora desbloqueie abaixo.</div>`:''}
+    ${S.setupImported?`
+    <div class="card" style="margin-top:10px">
+      <p style="margin-bottom:10px;font-size:12px;color:var(--text2)">INSERIR CHAVE</p>
+      <div class="ig">
+        <input type="text" id="inp-k-setup" class="mono-in"
+          placeholder="Cole os 64 caracteres hex aqui…"
+          autocomplete="off" spellcheck="false" style="font-size:12px">
+      </div>
+      <button class="btn btn-g" id="btn-mk-setup" style="margin-top:6px">🔑 Desbloquear vault</button>
+    </div>`:''}
+  </div>
+  `}
+
   ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
 </div>`;
 }
@@ -700,6 +729,8 @@ function bind(){
     }));
 
   // ---- SETUP ----
+  on('btn-tab-new',()=>{S.setupTab='new';S.setupImported=false;S.error=null;render();});
+  on('btn-tab-imp',()=>{S.setupTab='imp';S.error=null;render();});
   on('btn-gen',async()=>{S.genKey=await mkKey();render();});
   on('btn-cpk',()=>{clip(S.genKey);toast('Chave copiada!','s');});
   on('btn-crt',async()=>{
@@ -708,6 +739,25 @@ function bind(){
     await persist();markInit();
     S.screen='vault';S.genKey=null;render();
     toast('Vault criado! Bem-vindo 🎉','s');
+  });
+  on('btn-im-setup',()=>$('f-im-setup')?.click());
+  $('f-im-setup')?.addEventListener('change',e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{
+      setBlob(ev.target.result.trim());
+      markInit();
+      S.setupImported=true;S.error=null;render();
+    };
+    r.readAsText(f);
+  });
+  on('btn-mk-setup',async()=>{
+    const k=($('inp-k-setup')?.value||'').trim();
+    if(k.length!==64){S.error='Chave deve ter exatamente 64 caracteres.';render();return;}
+    try{
+      await unlock(k);S.error=null;S.screen='vault';S.setupImported=false;render();
+      toast('Vault desbloqueado ✓','s');
+    }catch{S.error='Chave incorreta — vault não pôde ser descriptografado.';render();}
   });
 
   // ---- LOCKED ----
