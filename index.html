@@ -252,10 +252,23 @@ code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
 // ================================================================
 const S={
   screen:'loading', vault:null, key:null,
-  editId:null, error:null, scanning:false,
+  editId:null, editUserId:null, error:null, scanning:false,
   showP:{}, filter:'Todos', genKey:null
 };
-const OWNERS=['Matheus','Pai','Mãe'];
+const BADGE_COLORS=[
+  {bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},
+  {bg:'rgba(251,191,36,.15)',color:'#fbbf24'},
+  {bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},
+  {bg:'rgba(248,113,113,.15)',color:'#f87171'},
+  {bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},
+  {bg:'rgba(52,211,153,.15)',color:'#6ee7b7'},
+];
+function badgeStyle(name){
+  const u=S.vault?.users||[];
+  const i=u.findIndex(x=>x.name===name);
+  const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];
+  return`background:${c.bg};color:${c.color}`;
+}
 const LV='nfcv2_vault', LI='nfcv2_init';
 
 // ================================================================
@@ -326,6 +339,7 @@ async function unlock(hex){
   const b=getBlob();
   if(!b) throw new Error('Vault não encontrado neste dispositivo.');
   S.vault=await dec(b,hex);
+  if(!S.vault.users) S.vault.users=[];
   S.key=hex;
 }
 
@@ -381,7 +395,7 @@ function init(){
 function render(){
   document.getElementById('app').innerHTML={
     loading:rLoad, setup:rSetup, locked:rLocked,
-    vault:rVault, add:rAdd, export:rExport
+    vault:rVault, add:rAdd, export:rExport, users:rUsers
   }[S.screen]?.()??rLoad();
   bind();
 }
@@ -468,6 +482,7 @@ function rLocked(){
 }
 
 function rVault(){
+  const users=S.vault.users||[];
   const list=S.filter==='Todos'
     ?S.vault.entries
     :S.vault.entries.filter(e=>e.owner===S.filter);
@@ -476,12 +491,12 @@ function rVault(){
     ?`<div class="empty">Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.</div>`
     :list.map(e=>{
       const shown=S.showP[e.id];
-      const bc=e.owner==='Matheus'?'bM':e.owner==='Pai'?'bP':'bMa';
+      const bs=badgeStyle(e.owner);
       return`
 <div class="ecard" data-id="${e.id}">
   <div class="ehdr">
     <div class="elabel">${esc(e.label)}</div>
-    <div class="ebadge ${bc}">${esc(e.owner)}</div>
+    <div class="ebadge" style="${bs}">${esc(e.owner)}</div>
   </div>
   ${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}
   <div class="epwdr">
@@ -498,7 +513,9 @@ function rVault(){
   return`
 <div class="screen">
   <div class="tbar">
-    <div class="tbar-side"></div>
+    <div class="tbar-side">
+      <button class="ibtn" id="btn-usr" title="Usuários">👥</button>
+    </div>
     <div class="tbar-title">🔐 Vault</div>
     <div class="tbar-side">
       <button class="ibtn" id="btn-exp" title="Backup">⬇️</button>
@@ -506,8 +523,8 @@ function rVault(){
     </div>
   </div>
   <div class="tabs">
-    ${['Todos','Matheus','Pai','Mãe'].map(o=>
-      `<button class="tab${S.filter===o?' on':''}" data-f="${o}">${o}</button>`
+    ${['Todos',...users.map(u=>u.name)].map(o=>
+      `<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`
     ).join('')}
   </div>
   <div class="elist">${cards}</div>
@@ -552,7 +569,10 @@ function rAdd(){
     <div class="ig">
       <label>Dono</label>
       <select id="f-ow">
-        ${OWNERS.map(o=>`<option value="${o}"${owner===o?' selected':''}>${o}</option>`).join('')}
+        ${(S.vault.users||[]).length===0
+          ?`<option value="">— cadastre usuários primeiro —</option>`
+          :(S.vault.users).map(u=>`<option value="${esc(u.name)}"${(e.owner||'')=== u.name?' selected':''}>${esc(u.name)}</option>`).join('')
+        }
       </select>
     </div>
     <div class="ig">
@@ -595,9 +615,47 @@ function rExport(){
 </div>`;
 }
 
-// ================================================================
-//  BIND EVENTS
-// ================================================================
+function rUsers(){
+  const users=S.vault.users||[];
+  const isEd=!!S.editUserId;
+  const eu=isEd?users.find(x=>x.id===S.editUserId)||{}:{};
+
+  const ulist=users.length===0
+    ?`<div class="empty">Nenhum usuário cadastrado.<br>Adicione abaixo.</div>`
+    :users.map((u,i)=>`
+<div class="ecard" style="display:flex;align-items:center;gap:12px;cursor:default">
+  <div class="ebadge" style="${badgeStyle(u.name)};padding:6px 12px;font-size:13px;font-weight:700;border-radius:10px">${esc(u.name.charAt(0).toUpperCase())}</div>
+  <div style="flex:1;font-size:15px;font-weight:600">${esc(u.name)}</div>
+  <button class="ibtn-sm bedu" data-uid="${u.id}" title="Editar">✏️</button>
+  <button class="ibtn-sm bdlu" data-uid="${u.id}" title="Remover">🗑️</button>
+</div>`).join('');
+
+  return`
+<div class="screen">
+  <div class="tbar">
+    <div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div>
+    <div class="tbar-title">👥 Usuários</div>
+    <div class="tbar-side"></div>
+  </div>
+  <div style="padding:10px 14px 0">
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
+      Usuários são usados para organizar as senhas por pessoa.
+    </div>
+    ${ulist}
+  </div>
+  <div class="card" style="margin-top:8px">
+    <h3 style="margin-bottom:12px">${isEd?'✏️ Editar usuário':'+ Novo usuário'}</h3>
+    <div class="ig">
+      <label>Nome</label>
+      <input type="text" id="f-un" placeholder="Ex: Matheus, Pai, Mãe…" value="${esc(eu.name||'')}" maxlength="30">
+    </div>
+    <button class="btn btn-p" id="btn-svu" style="margin-top:6px">${isEd?'✓ Salvar':'+ Adicionar usuário'}</button>
+    ${isEd?`<button class="btn btn-o" id="btn-cncu" style="margin-top:4px">Cancelar</button>`:''}
+  </div>
+</div>`;
+}
+
+
 function bind(){
   const $=id=>document.getElementById(id);
   const on=(id,fn)=>$(id)?.addEventListener('click',fn);
@@ -646,7 +704,7 @@ function bind(){
   on('btn-cpk',()=>{clip(S.genKey);toast('Chave copiada!','s');});
   on('btn-crt',async()=>{
     if(!S.genKey)return;
-    S.vault={entries:[]};S.key=S.genKey;
+    S.vault={entries:[],users:[]};S.key=S.genKey;
     await persist();markInit();
     S.screen='vault';S.genKey=null;render();
     toast('Vault criado! Bem-vindo 🎉','s');
@@ -682,10 +740,48 @@ function bind(){
   on('btn-add',()=>{S.editId=null;S.screen='add';render();});
   on('btn-lk',()=>{S.vault=null;S.key=null;S.screen='locked';render();});
   on('btn-exp',()=>{S.screen='export';render();});
+  on('btn-usr',()=>{S.editUserId=null;S.screen='users';render();});
+
+  // ---- USERS ----
+  document.querySelectorAll('.bedu').forEach(b=>
+    b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
+  document.querySelectorAll('.bdlu').forEach(b=>
+    b.addEventListener('click',async()=>{
+      const u=S.vault.users.find(x=>x.id===b.dataset.uid);
+      if(!u)return;
+      const inUse=S.vault.entries.some(e=>e.owner===u.name);
+      if(inUse&&!confirm(`"${u.name}" está sendo usado em senhas. Remover mesmo assim?`))return;
+      if(!inUse&&!confirm(`Remover usuário "${u.name}"?`))return;
+      S.vault.users=S.vault.users.filter(x=>x.id!==b.dataset.uid);
+      await persist();toast('Usuário removido','s');render();
+    }));
+  on('btn-svu',async()=>{
+    const name=(document.getElementById('f-un')?.value||'').trim();
+    if(!name){toast('Digite um nome','e');return;}
+    const users=S.vault.users||[];
+    const dup=users.some(u=>u.name.toLowerCase()===name.toLowerCase()&&u.id!==S.editUserId);
+    if(dup){toast('Já existe um usuário com esse nome','e');return;}
+    if(S.editUserId){
+      const i=users.findIndex(x=>x.id===S.editUserId);
+      if(i>=0){
+        const old=users[i].name;
+        users[i].name=name;
+        // atualiza owner nas entradas
+        S.vault.entries.forEach(e=>{if(e.owner===old)e.owner=name;});
+        if(S.filter===old)S.filter=name;
+      }
+      S.editUserId=null;
+    }else{
+      if(!S.vault.users)S.vault.users=[];
+      S.vault.users.push({id:uid(),name});
+    }
+    await persist();toast(S.editUserId?'Atualizado':'Usuário adicionado ✓','s');render();
+  });
+  on('btn-cncu',()=>{S.editUserId=null;render();});
 
   // ---- ADD/EDIT ----
   on('btn-bk',()=>{
-    S.editId=null;S.showP.form=false;
+    S.editId=null;S.editUserId=null;S.showP.form=false;
     S.screen=S.vault?'vault':'locked';render();
   });
   on('btn-gpw',()=>{
@@ -703,7 +799,7 @@ function bind(){
     const entry={
       label:lb,username:($('f-us')?.value||'').trim(),
       password:pw,url:($('f-ur')?.value||'').trim(),
-      owner:$('f-ow')?.value||'Matheus',
+      owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),
       notes:($('f-nt')?.value||'').trim()
     };
     const wasEd=!!S.editId;
