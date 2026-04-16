@@ -1,228 +1,102 @@
+
 # 🔐 NFC Vault
 
-Gerenciador de senhas pessoal com criptografia **AES-256-GCM** e desbloqueio via **tag NFC**.  
-Funciona 100% no navegador — sem servidor, sem conta, sem dependências externas.
+Gerenciador de senhas pessoal de alta segurança com criptografia **AES-256-GCM**, sincronização automática em nuvem via **Firebase** e desbloqueio físico por **tag NFC**.
+
+Este projeto utiliza uma arquitetura *Zero-Knowledge*: as suas senhas são criptografadas e descriptografadas apenas no seu navegador. A sua chave mestre (NFC) nunca é enviada para o servidor.
 
 ---
 
-## Como funciona
+## 🚀 Como funciona
 
-```
-Tag NFC (chave física)
-       ↓
-Chrome Android lê a tag
-       ↓
-Vault descriptografado localmente
-       ↓
-Você vê e gerencia as senhas
-       ↓
-Fecha o Chrome → vault bloqueia automaticamente
+```text
+Tag NFC (Chave Física) ou Chave Manual (64 hex)
+        ↓
+Interface solicita o desbloqueio
+        ↓
+Dados criptografados baixados do Firebase
+        ↓
+Vault descriptografado localmente no navegador
+        ↓
+Gerenciamento de senhas (Sincronização em tempo real)
 ```
 
-As senhas **nunca saem do seu dispositivo** em texto claro. Sem a tag NFC, o arquivo de backup é ilegível.
+As senhas **nunca saem do seu dispositivo** em texto claro. Sem a chave de 64 caracteres hexadecimais, os dados no banco de dados são completamente ilegíveis.
 
 ---
 
-## Primeira configuração
+## 🛠️ Primeira configuração
 
 ### Pré-requisitos
 
-- **Android**: Chrome 89 ou superior (Web NFC nativo)
-- **PC**: qualquer navegador moderno (desbloqueio manual pela chave)
-- App **NFC Tools** instalado no Android ([Play Store](https://play.google.com/store/apps/details?id=com.wakdev.wdnfc))
-- Uma **tag NFC** (NTAG213 ou similar — encontrada em papelaria ou lojas online)
+* **Android**: Chrome 89+ (para suporte à Web NFC).
+* **PC/Outros**: Qualquer navegador moderno (utilizando a chave manual).
+* **Hardware**: Uma **tag NFC** (NTAG213 ou similar).
+* **App Auxiliar**: [NFC Tools](https://play.google.com/store/apps/details?id=com.wakdev.wdnfc) (apenas para a gravação inicial da tag).
 
-### Opção A — Vault novo
+### Opção A — Criar um Vault Novo
 
-**1. Abra o app**
+1.  **Gere a chave**: No app, clique em **"Gerar chave aleatória"**. Copie o código gerado.
+2.  **Grave na Tag**: No app **NFC Tools**, vá em `Write` -> `Add a record` -> `Text`, cole a chave de 64 caracteres e grave na tag.
+3.  **Ative o Vault**: Volte ao NFC Vault e clique em **"Já gravei na tag — Criar Vault"**. O sistema criará seu espaço seguro no Firebase.
 
-Acesse `index.html` pelo Chrome. Na primeira vez, você verá a tela de configuração. Selecione **"Vault novo"**.
+> ⚠️ **AVISO CRÍTICO:** Salve uma cópia desta chave em um local seguro (papel ou outro cofre). Se você perder a tag NFC e não tiver a chave anotada, **não há como recuperar as senhas**.
 
-**2. Gere a chave de segurança**
+### Opção B — Acessar Vault Existente (Nuvem)
 
-Clique em **"Gerar chave aleatória"**.  
-Uma chave de 64 caracteres hexadecimais será exibida.
-
-> ⚠️ **Guarde essa chave em lugar seguro!** Se perder a tag NFC e não tiver a chave, não será possível recuperar as senhas.
-
-**3. Grave a chave na tag NFC**
-
-Abra o **NFC Tools** no Android:
-1. Aba **Write**
-2. **Add a record**
-3. **Text**
-4. Cole a chave de 64 caracteres
-5. Toque em **Write** e aproxime a tag NFC do celular
-
-**4. Crie o vault**
-
-Volte ao NFC Vault e clique em **"Já gravei na tag — Criar Vault"**.  
-Pronto! O vault está criado e você já está dentro.
-
-### Opção B — Já tenho um vault
-
-Se você já possui um arquivo `.nfcv` exportado de outro dispositivo:
-
-1. Na tela inicial, selecione **"Já tenho um vault"**
-2. Toque em **"Selecionar arquivo .nfcv"** e escolha o arquivo
-3. Cole a chave de 64 caracteres no campo exibido
-4. Clique em **"Desbloquear vault"**
+Se você já configurou o vault e quer acessar de outro dispositivo:
+1.  Selecione **"Acessar meu Vault"**.
+2.  **Via Nuvem**: Cole sua chave de 64 caracteres e clique em **"Entrar com Chave"**. O app baixará e abrirá seus dados automaticamente.
+3.  **Via Arquivo**: Se tiver um backup `.nfcv`, você pode carregá-lo e usar a chave para descriptografar.
 
 ---
 
-## Uso diário
+## 📱 Uso Diário
 
-### Desbloquear (Android)
-
-1. Abra o `index.html` no Chrome
-2. Clique em **"Aproximar tag NFC"**
-3. Encoste a tag no celular
-4. Vault desbloqueado ✓
-
-### Desbloquear (PC / Windows)
-
-1. Abra o `index.html` no Chrome
-2. Cole a chave de 64 caracteres no campo de texto
-3. Clique em **"Desbloquear com chave"**
-
-### Adicionar senha
-
-> ⚠️ Cadastre pelo menos um usuário antes de adicionar senhas (veja seção abaixo).
-
-1. Toque no botão **+** (canto inferior direito)
-2. Preencha: nome do serviço, usuário/e-mail, senha, URL e selecione o dono
-3. Use o botão 🎲 para gerar uma senha segura automaticamente
-4. Clique em **"Adicionar senha"**
-
-### Gerenciar usuários
-
-Os usuários são as pessoas que vão usar o vault. Cada senha é vinculada a um usuário, permitindo filtrar por pessoa.
-
-1. Na tela principal, toque no botão **👥** (canto superior esquerdo)
-2. Digite o nome e clique em **"+ Adicionar usuário"**
-3. Repita para cada pessoa (ex: Matheus, Pai, Mãe, etc.)
-4. Para editar ou remover, use os ícones ✏️ e 🗑️ ao lado de cada usuário
-
-### Outras ações
-
-| Ação | Como fazer |
-|---|---|
-| Ver senha | Toque no ícone 👁️ na listagem |
-| Copiar senha | Toque no ícone 📋 |
-| Editar senha | Toque no card da senha |
-| Excluir senha | Ícone 🗑️ no card ou dentro da edição |
-| Filtrar por usuário | Abas no topo: Todos / nome de cada usuário |
-| Gerenciar usuários | Botão 👥 no canto superior esquerdo |
-| Bloquear | Botão 🔒 no canto superior direito |
+* **Desbloqueio NFC**: No Android, basta clicar em **"Aproximar tag NFC"** e encostar sua tag no aparelho.
+* **Sincronização**: Toda alteração é salva automaticamente na nuvem. Você não precisa se preocupar em "salvar" o arquivo o tempo todo.
+* **Filtros por Usuário**: Organize suas senhas criando usuários (ex: Matheus, Trabalho, Família) e filtre-as facilmente pelas abas superiores.
 
 ---
 
-## Backup e sincronização
+## ☁️ Backup e Proteção de Dados
 
-> ⚠️ As senhas ficam no **localStorage do Chrome** — se limpar os dados do navegador ou trocar de dispositivo, o vault some. **Faça backup regularmente.**
+O sistema oferece três camadas de segurança para seus dados:
 
-### Exportar vault (arquivo)
-
-1. Botão ⬇️ (canto superior direito) → **"Baixar vault.nfcv"**
-2. Salve o arquivo em local seguro: Google Drive, OneDrive, pen drive, etc.
-
-O arquivo `.nfcv` está **criptografado** — pode ser armazenado em qualquer lugar sem risco.
-
-### Backup via Telegram
-
-O app permite enviar o vault criptografado direto para o seu Telegram com um botão. A configuração do bot fica salva **dentro do vault** e vai junto ao exportar o `.nfcv`.
-
-**Configurar o bot:**
-
-1. No Telegram, busque **@BotFather** → digite `/newbot` → siga as instruções → copie o **token**
-2. Busque o bot criado → clique em **Start**
-3. Acesse no navegador: `https://api.telegram.org/bot<TOKEN>/getUpdates` → copie o valor de `id` dentro de `chat`
-4. No app: botão **⬇️** → **⚙️ Configurar bot Telegram** → cole token + chat ID → salve
-5. Use **🧪 Testar envio** para confirmar
-
-**Enviar backup:**
-
-Botão ⬇️ → **📨 Enviar para o Telegram** — o arquivo `.nfcv` chega no seu chat como documento.
-
-### Importar vault em outro dispositivo
-
-1. Transfira o arquivo `.nfcv` para o novo dispositivo
-2. Abra o NFC Vault → selecione **"Já tenho um vault"** (primeira vez) ou botão ⬇️ → **"Selecionar arquivo"**
-3. Escolha o `.nfcv`
-4. Desbloqueie normalmente com a tag NFC ou a chave
-
-### Usar em múltiplos dispositivos
-
-Cada dispositivo tem seu próprio localStorage — você precisa importar o `.nfcv` manualmente quando houver atualizações. Sugestão de rotina:
-
-```
-Adicionar/editar senhas → Enviar backup pelo Telegram (ou exportar .nfcv)
-       ↓
-No outro dispositivo: baixar o .nfcv do Telegram → importar → desbloquear
-```
+1.  **Nuvem (Firebase)**: Sincronização global automática e persistente.
+2.  **Telegram**: Envio manual de cópia criptografada para o seu próprio bot (útil como backup secundário externo).
+3.  **Arquivo Local (.nfcv)**: Você pode baixar uma cópia criptografada para guardar de forma offline (pen drives, etc).
 
 ---
 
-## Hospedar no GitHub Pages
+## 🔒 Segurança e Privacidade
 
-Para acessar de qualquer lugar sem precisar carregar o arquivo:
-
-1. Crie um repositório no GitHub (pode ser público — o código não contém segredos)
-2. Renomeie `nfc_vault.html` para `index.html` e faça o upload
-3. Vá em **Settings → Pages → Branch: main → Save**
-4. Acesse em `https://seu-usuario.github.io/nome-do-repositorio`
-
-> ⚠️ **Nunca faça upload do arquivo `.nfcv`** no repositório público. Suba apenas o `index.html`.
-
-### Instalar como app no Android (PWA)
-
-1. Acesse a URL do GitHub Pages no Chrome
-2. Toque no menu (⋮) → **"Adicionar à tela inicial"**
-3. O vault aparecerá como um app na sua tela inicial
+| Recurso | Tecnologia / Detalhe |
+| :--- | :--- |
+| **Algoritmo** | AES-256-GCM (Criptografia Autenticada) |
+| **Arquitetura** | *Zero-Knowledge* (Privacidade absoluta) |
+| **Identificador** | ID do Vault gerado via SHA-256 da chave |
+| **Infraestrutura** | Firebase Realtime Database (Google Cloud) |
+| **Backup Extra** | Telegram Bot API integration |
 
 ---
 
-## Segurança
+## 🌐 Hospedagem (GitHub Pages)
 
-| Item | Detalhes |
-|---|---|
-| Algoritmo | AES-256-GCM (padrão militar) |
-| Implementação | Web Crypto API nativa do navegador |
-| Chave | 256 bits gerados por `crypto.getRandomValues` |
-| IV | 96 bits aleatórios por operação de criptografia |
-| Config Telegram | Salva criptografada dentro do vault |
-| Dependências externas | Nenhuma |
-| Dados enviados a servidores | Nenhum (exceto Telegram API no backup) |
-
-### O que acontece se eu perder a tag NFC?
-
-Se você tiver a chave salva em outro lugar (anotada, no celular, etc.), pode usá-la manualmente para desbloquear e gravar em uma nova tag.  
-Se perdeu a tag **e** não tem a chave salva: as senhas não podem ser recuperadas.
-
-**Recomendação:** salve a chave de 64 caracteres em um local seguro além da tag (ex: papel guardado, gerenciador de senhas de outro dispositivo).
+Você pode hospedar este gerenciador para uso pessoal no GitHub:
+1.  Crie um repositório no seu GitHub.
+2.  Suba o arquivo `index.html`.
+3.  Ative o **GitHub Pages** em `Settings > Pages`.
+4.  **Configuração de Segurança**: No painel do Google Cloud, restrinja sua API Key para aceitar apenas requisições vindas do domínio `https://seu-usuario.github.io/*`.
 
 ---
 
-## Arquivos do projeto
+## 🛠️ Tecnologias Utilizadas
 
-```
-/
-├── index.html     → o app completo (interface + criptografia)
-└── README.md      → este documento
-```
-
-O arquivo `.nfcv` gerado pelo app **não deve ser versionado** — adicione ao `.gitignore`:
-
-```
-*.nfcv
-```
+* **Web Crypto API**: Criptografia de nível militar nativa do navegador.
+* **Web NFC**: Comunicação com hardware NFC via NDEF.
+* **Firebase SDK**: Banco de dados NoSQL em tempo real.
+* **PWA**: Pode ser instalado na tela inicial do celular como um aplicativo nativo.
 
 ---
-
-## Tecnologias utilizadas
-
-- **Web Crypto API** — criptografia AES-256-GCM nativa
-- **Web NFC API** — leitura de tags NFC (Chrome Android 89+)
-- **localStorage** — armazenamento local no navegador
-- **Telegram Bot API** — envio de backup criptografado
-- HTML + CSS + JavaScript puro — zero dependências, zero frameworks
+```
