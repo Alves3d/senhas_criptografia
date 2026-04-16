@@ -71,8 +71,8 @@ body{font-family:var(--sans);color:var(--text);min-height:100dvh;max-width:480px
   padding:12px 14px;font-family:var(--mono);font-size:11px;color:var(--green);
   word-break:break-all;line-height:1.7;margin:10px 0 6px;letter-spacing:.5px;user-select:all;cursor:text}
 .key-box.sm{font-size:10px}
-.div-or{text-align:center;color:var(--text3);font-size:12px;margin:2px 0;position:relative}
-.div-or::before,.div-or::after{content:'';position:absolute;top:50%;width:38%;height:1px;background:var(--border)}
+.div-or{text-align:center;color:var(--text3);font-size:12px;margin:8px 0;position:relative}
+.div-or::before,.div-or::after{content:'';position:absolute;top:50%;width:35%;height:1px;background:var(--border)}
 .div-or::before{left:5%}.div-or::after{right:5%}
 .nfc-card{text-align:center;padding:28px 20px}
 .nfc-ico{font-size:56px;display:block;margin-bottom:10px;line-height:1}
@@ -132,10 +132,14 @@ import { getDatabase, ref, set, get, child }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 // ================================================================
-//  FIREBASE
+//  FIREBASE (API KEY OBFUSCADA)
 // ================================================================
+const p1 = "AIzaSyAyVVDf3";
+const p2 = "4Nsq4vJ7GFovADWQUi";
+const p3 = "wAQIMbAo";
+
 const fbApp = initializeApp({
-  apiKey:            "AIzaSyAyVVDf34Nsq4vJ7GFovADWQUiwAQIMbAo",
+  apiKey:            p1 + p2 + p3,
   authDomain:        "cipherchat-8d3dd.firebaseapp.com",
   databaseURL:       "https://cipherchat-8d3dd-default-rtdb.firebaseio.com",
   projectId:         "cipherchat-8d3dd",
@@ -145,8 +149,7 @@ const fbApp = initializeApp({
 });
 const db = getDatabase(fbApp);
 
-// Deriva um ID seguro da chave (SHA-256 → primeiros 32 hex chars)
-// O vaultId identifica o slot no Firebase sem expor a chave
+// ID derivado da chave para localizar o slot sem expor a chave
 async function vaultId(hexKey){
   const b   = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hexKey));
   return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);
@@ -243,7 +246,7 @@ async function persist(){
 
 async function unlock(hex){
   const blob = await fbRead(hex);
-  if(!blob) throw new Error('Vault não encontrado. Verifique a chave.');
+  if(!blob) throw new Error('Vault não encontrado na nuvem. Verifique a chave.');
   S.vault = await dec(blob, hex);
   if(!S.vault.users) S.vault.users=[];
   S.key = hex;
@@ -263,7 +266,7 @@ function delE(id){S.vault.entries=S.vault.entries.filter(e=>e.id!==id);}
 function clip(t){navigator.clipboard?.writeText(t).catch(()=>{const a=Object.assign(document.createElement('textarea'),{value:t});document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();});}
 function toast(msg,type='s'){document.querySelectorAll('.toast').forEach(x=>x.remove());const el=document.createElement('div');el.className=`toast t${type}`;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el?.remove(),2600);}
 function genPwd(n=16){const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a).map(b=>c[b%c.length]).join('');}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 // ================================================================
 //  INIT
@@ -296,10 +299,9 @@ function rSetup(){
     <div class="hdr-sub">Configuração inicial</div>
   </div>
   <div style="padding:0 14px;margin-bottom:4px">
-    <p style="font-size:13px;color:var(--text2);margin-bottom:10px">Escolha uma opção:</p>
     <div class="btn-row">
-      <button class="btn btn-p" id="btn-tab-new" style="${!S.setupTab||S.setupTab==='new'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">🆕 Vault novo</button>
-      <button class="btn btn-p" id="btn-tab-imp" style="${S.setupTab==='imp'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">📥 Já tenho um vault</button>
+      <button class="btn btn-p" id="btn-tab-new" style="${!S.setupTab||S.setupTab==='new'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">🆕 Novo Vault</button>
+      <button class="btn btn-p" id="btn-tab-imp" style="${S.setupTab==='imp'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">📥 Acessar meu Vault</button>
     </div>
   </div>
   ${(!S.setupTab||S.setupTab==='new')?`
@@ -307,9 +309,9 @@ function rSetup(){
     <div class="step"><div class="step-n">1</div>
       <div>Gere a <strong>chave de segurança</strong> abaixo</div></div>
     <div class="step"><div class="step-n">2</div>
-      <div>Abra <strong>NFC Tools</strong> no Android → Write → Add Record → <strong>Text</strong> → cole a chave → grave na tag NFC</div></div>
+      <div>Grave a chave na sua tag NFC via celular</div></div>
     <div class="step"><div class="step-n">3</div>
-      <div>Clique em <strong>"Criar Vault"</strong> — ficará salvo na nuvem automaticamente</div></div>
+      <div>Clique em <strong>"Criar Vault"</strong></div></div>
   </div>
   <div style="padding:6px 14px 0">
     <button class="btn btn-o" id="btn-gen">⚡ Gerar chave aleatória</button>
@@ -324,21 +326,30 @@ function rSetup(){
   `:`
   <div style="padding:0 14px">
     <div class="card" style="margin:0 0 10px">
-      <p style="font-size:13px;color:var(--text2);line-height:1.6">Selecione o arquivo <code>.nfcv</code> exportado anteriormente. Depois desbloqueie com a tag NFC ou digitando a chave.</p>
-    </div>
-    <input type="file" id="f-im-setup" accept=".nfcv,.txt" style="display:none">
-    <button class="btn btn-o" id="btn-im-setup">📂 Selecionar arquivo .nfcv</button>
-    ${S.setupImported?`<div style="margin-top:8px;color:var(--green);font-size:13px">✓ Arquivo carregado! Agora desbloqueie abaixo.</div>`:''}
-    ${S.setupImported?`
-    <div class="card" style="margin-top:10px">
-      <p style="margin-bottom:10px;font-size:12px;color:var(--text2)">INSERIR CHAVE</p>
+      <h3 style="margin-bottom:8px">Acesso pela Nuvem</h3>
       <div class="ig">
         <input type="text" id="inp-k-setup" class="mono-in"
-          placeholder="Cole os 64 caracteres hex aqui…"
+          placeholder="Cole sua chave de 64 caracteres aqui..."
           autocomplete="off" spellcheck="false" style="font-size:12px">
       </div>
-      <button class="btn btn-g" id="btn-mk-setup" style="margin-top:6px">🔑 Desbloquear vault</button>
-    </div>`:''}
+      <button class="btn btn-g" id="btn-cloud-setup" style="margin-top:6px">🔑 Entrar com Chave</button>
+    </div>
+    
+    <div class="div-or">OU USAR ARQUIVO</div>
+
+    <div class="card" style="margin:0 0 10px">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se você tem um backup <code>.nfcv</code>, selecione abaixo.</p>
+      <input type="file" id="f-im-setup" accept=".nfcv,.txt" style="display:none">
+      <button class="btn btn-o" id="btn-im-setup">📂 Selecionar arquivo .nfcv</button>
+      ${S.setupImported?`
+      <div style="margin-top:12px">
+        <p style="color:var(--green);font-size:13px;margin-bottom:8px">✓ Arquivo carregado! Agora cole a chave para descriptografar:</p>
+        <div class="ig">
+            <input type="text" id="inp-k-file-setup" class="mono-in" placeholder="Chave do arquivo..." style="font-size:12px">
+        </div>
+        <button class="btn btn-g" id="btn-mk-file-setup" style="margin-top:6px">🔓 Abrir arquivo</button>
+      </div>`:''}
+    </div>
   </div>
   `}
   ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
@@ -365,22 +376,21 @@ function rLocked(){
       ${S.scanning?'⏳ Aguardando…':'📡 Aproximar tag NFC'}
     </button>
   </div>
-  <div class="div-or">ou</div>
+  <div class="div-or">ou chave manual</div>
   `:`
-  <div class="card"><p>Web NFC disponível apenas no <strong>Chrome para Android</strong>. No PC, use a chave manual abaixo.</p></div>
+  <div class="card"><p>Web NFC disponível apenas no <strong>Chrome para Android</strong>.</p></div>
   `}
   <div class="card">
-    <p style="margin-bottom:10px;font-size:12px;color:var(--text2)">INSERIR CHAVE MANUALMENTE</p>
     <div class="ig">
       <input type="text" id="inp-k" class="mono-in"
-        placeholder="Cole os 64 caracteres hex aqui…"
+        placeholder="Cole sua chave aqui…"
         autocomplete="off" spellcheck="false" style="font-size:12px">
     </div>
-    <button class="btn btn-o" id="btn-mk">🔑 Desbloquear com chave</button>
+    <button class="btn btn-o" id="btn-mk">🔑 Desbloquear</button>
   </div>
   ${S.error?`<div class="err">${S.error}</div>`:''}
   <div style="text-align:center;padding:14px">
-    <button class="btn-txt" id="btn-rst">Reconfigurar vault</button>
+    <button class="btn-txt" id="btn-rst">Reconfigurar vault (Sair)</button>
   </div>
 </div>`;
 }
@@ -444,7 +454,7 @@ function rAdd(){
   <div class="fbody">
     <div class="ig">
       <label>Nome / Serviço *</label>
-      <input type="text" id="f-lb" placeholder="Gmail, Banco Inter, Netflix…" value="${esc(e.label||'')}">
+      <input type="text" id="f-lb" placeholder="Gmail, Banco, Netflix…" value="${esc(e.label||'')}">
     </div>
     <div class="ig">
       <label>Usuário / E-mail</label>
@@ -461,10 +471,6 @@ function rAdd(){
       </div>
     </div>
     <div class="ig">
-      <label>URL (opcional)</label>
-      <input type="url" id="f-ur" placeholder="https://…" value="${esc(e.url||'')}">
-    </div>
-    <div class="ig">
       <label>Dono</label>
       <select id="f-ow">
         ${(S.vault.users||[]).length===0
@@ -478,7 +484,7 @@ function rAdd(){
       <textarea id="f-nt" placeholder="Observações opcionais…">${esc(e.notes||'')}</textarea>
     </div>
     <button class="btn btn-p" id="btn-sv">${isEd?'✓ Salvar alterações':'+ Adicionar senha'}</button>
-    ${isEd?`<button class="btn btn-r" id="btn-de">🗑️ Excluir esta senha</button>`:''}
+    ${isEd?`<button class="btn btn-r" id="btn-de" style="margin-top:10px">🗑️ Excluir esta senha</button>`:''}
   </div>
 </div>`;
 }
@@ -489,7 +495,7 @@ function rUsers(){
   const isEd=!!S.editUserId;
   const eu=isEd?users.find(x=>x.id===S.editUserId)||{}:{};
   const ulist=users.length===0
-    ?`<div class="empty">Nenhum usuário cadastrado.<br>Adicione abaixo.</div>`
+    ?`<div class="empty">Nenhum usuário cadastrado.</div>`
     :users.map(u=>`
 <div class="ecard" style="display:flex;align-items:center;gap:12px;cursor:default">
   <div class="ebadge" style="${badgeStyle(u.name)};padding:6px 12px;font-size:13px;font-weight:700;border-radius:10px">${esc(u.name.charAt(0).toUpperCase())}</div>
@@ -505,17 +511,14 @@ function rUsers(){
     <div class="tbar-side"></div>
   </div>
   <div style="padding:10px 14px 0">
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Usuários organizam as senhas por pessoa.</div>
     ${ulist}
   </div>
   <div class="card" style="margin-top:8px">
     <h3 style="margin-bottom:12px">${isEd?'✏️ Editar usuário':'+ Novo usuário'}</h3>
     <div class="ig">
-      <label>Nome</label>
-      <input type="text" id="f-un" placeholder="Ex: Matheus, Pai, Mãe…" value="${esc(eu.name||'')}" maxlength="30">
+      <input type="text" id="f-un" placeholder="Ex: Matheus, Principal…" value="${esc(eu.name||'')}" maxlength="30">
     </div>
     <button class="btn btn-p" id="btn-svu" style="margin-top:6px">${isEd?'✓ Salvar':'+ Adicionar usuário'}</button>
-    ${isEd?`<button class="btn btn-o" id="btn-cncu" style="margin-top:4px">Cancelar</button>`:''}
   </div>
 </div>`;
 }
@@ -532,33 +535,25 @@ function rExport(){
   </div>
   <div style="padding:6px 0">
     <div class="card">
-      <h3>☁️ Armazenamento</h3>
-      <p>O vault está salvo <strong style="color:var(--green)">na nuvem (Firebase)</strong> — acessível em qualquer dispositivo com a chave ou tag NFC. Backup automático a cada alteração.</p>
+      <h3>☁️ Nuvem Ativa</h3>
+      <p>O vault está sincronizado via Firebase. Suas alterações são salvas automaticamente.</p>
     </div>
     <div class="card">
-      <h3>📤 Exportar cópia local</h3>
-      <p>Baixe o arquivo <code>.nfcv</code> como backup offline extra.</p>
+      <h3>📤 Exportar arquivo</h3>
       <button class="btn btn-p" id="btn-dl">⬇️ Baixar vault.nfcv</button>
     </div>
     <div class="card">
-      <h3>✈️ Backup via Telegram</h3>
-      <p style="margin-bottom:10px">${tg.token&&tg.chatId?'Envia o vault criptografado para o Telegram.':'Configure o bot para habilitar.'}</p>
+      <h3>✈️ Telegram Backup</h3>
+      <p style="margin-bottom:10px">${tg.token&&tg.chatId?'Bot configurado.':'Configure o bot para habilitar.'}</p>
       ${tg.token&&tg.chatId
-        ?`<button class="btn btn-g" id="btn-tg">📨 Enviar para o Telegram</button>
+        ?`<button class="btn btn-g" id="btn-tg">📨 Enviar para Telegram</button>
            <button class="btn-txt" id="btn-tg-cfg">⚙️ Reconfigurar bot</button>`
         :`<button class="btn btn-o" id="btn-tg-cfg">⚙️ Configurar bot Telegram</button>`}
     </div>
     <div class="card">
-      <h3>📥 Importar vault</h3>
-      <p>Carregue um arquivo <code>.nfcv</code> e sincronize de volta para a nuvem.</p>
-      <input type="file" id="f-im" accept=".nfcv,.txt" style="display:none">
-      <button class="btn btn-o" id="btn-im">📂 Selecionar arquivo</button>
-    </div>
-    <div class="card">
-      <h3>🔑 Chave atual</h3>
-      <p>Para acessar em outro dispositivo ou gravar em nova tag NFC.</p>
+      <h3>🔑 Chave Atual</h3>
       <div class="key-box sm">${S.key}</div>
-      <button class="btn btn-o" id="btn-ck">📋 Copiar chave</button>
+      <button class="btn btn-o" id="btn-ck">📋 Copiar minha chave</button>
     </div>
   </div>
 </div>`;
@@ -574,26 +569,16 @@ function rTgConfig(){
     <div class="tbar-title">✈️ Telegram Bot</div>
     <div class="tbar-side"></div>
   </div>
-  <div style="padding:14px 14px 0">
-    <div class="steps" style="padding:0;margin-bottom:14px">
-      <div class="step"><div class="step-n">1</div>
-        <div>Telegram → <strong>@BotFather</strong> → <code>/newbot</code> → copie o <strong>token</strong></div></div>
-      <div class="step"><div class="step-n">2</div>
-        <div>Abra o bot → clique em <strong>Start</strong></div></div>
-      <div class="step"><div class="step-n">3</div>
-        <div>Acesse <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> → copie o <strong>id</strong> de <em>chat</em></div></div>
-    </div>
+  <div style="padding:14px">
     <div class="ig" style="margin-bottom:12px">
       <label>Token do Bot</label>
-      <input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}" autocomplete="off" spellcheck="false">
+      <input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}">
     </div>
     <div class="ig" style="margin-bottom:14px">
       <label>Chat ID</label>
-      <input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}" autocomplete="off">
+      <input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}">
     </div>
     <button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>
-    ${tg.token?`<button class="btn btn-o" id="btn-tg-test" style="margin-top:6px">🧪 Testar envio</button>`:''}
-    ${tg.token?`<button class="btn btn-r" id="btn-tg-del" style="margin-top:6px">🗑️ Remover</button>`:''}
     ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
   </div>
 </div>`;
@@ -665,31 +650,44 @@ function bind(){
     S.screen='vault';S.genKey=null;render();
     toast('Vault criado na nuvem! 🎉','s');
   });
+
+  // ACESSO DIRETO PELA NUVEM NA SETUP
+  on('btn-cloud-setup', async () => {
+    const k = ($('inp-k-setup')?.value || '').trim();
+    if (k.length !== 64) { S.error = 'A chave deve ter 64 caracteres hex.'; render(); return; }
+    try {
+        S.error = null;
+        toast('Conectando à nuvem...', 's');
+        await unlock(k);
+        localStorage.setItem(LI, '1');
+        S.screen = 'vault';
+        render();
+        toast('Vault carregado ✓', 's');
+    } catch (err) { S.error = err.message; render(); }
+  });
+
   on('btn-im-setup',()=>$('f-im-setup')?.click());
   $('f-im-setup')?.addEventListener('change',e=>{
     const f=e.target.files[0];if(!f)return;
     const r=new FileReader();
     r.onload=ev=>{
-      // guarda o blob temporariamente para unlock escrever no Firebase
       S._importBlob=ev.target.result.trim();
       S.setupImported=true;S.error=null;render();
     };
     r.readAsText(f);
   });
-  on('btn-mk-setup',async()=>{
-    const k=($('inp-k-setup')?.value||'').trim();
-    if(k.length!==64){S.error='Chave deve ter exatamente 64 caracteres.';render();return;}
+  
+  on('btn-mk-file-setup',async()=>{
+    const k=($('inp-k-file-setup')?.value||'').trim();
+    if(k.length!==64){S.error='Chave incorreta.';render();return;}
     try{
       S.vault=await dec(S._importBlob,k);
-      if(!S.vault.users)S.vault.users=[];
       S.key=k;
-      // migra para Firebase
       await persist();
       localStorage.setItem(LI,'1');
-      S.error=null;S.setupImported=false;S._importBlob=null;
       S.screen='vault';render();
-      toast('Vault importado e salvo na nuvem ✓','s');
-    }catch{S.error='Chave incorreta.';render();}
+      toast('Backup importado com sucesso!','s');
+    }catch{S.error='Chave incorreta para este arquivo.';render();}
   });
 
   // ---- LOCKED ----
@@ -699,19 +697,19 @@ function bind(){
       const k=await readNFC();
       await unlock(k);
       S.scanning=false;S.screen='vault';render();
-      toast('Vault desbloqueado ✓','s');
+      toast('Desbloqueado ✓','s');
     }catch(err){S.scanning=false;S.error=err.message;render();}
   });
   on('btn-mk',async()=>{
     const k=($('inp-k')?.value||'').trim();
-    if(k.length!==64){S.error='Chave deve ter exatamente 64 caracteres.';render();return;}
+    if(k.length!==64){S.error='Chave inválida.';render();return;}
     try{
       await unlock(k);S.error=null;S.screen='vault';render();
-      toast('Vault desbloqueado ✓','s');
-    }catch{S.error='Chave incorreta ou vault não encontrado.';render();}
+      toast('Desbloqueado ✓','s');
+    }catch{S.error='Chave incorreta ou sem internet.';render();}
   });
   on('btn-rst',()=>{
-    if(confirm('Remover configuração local? O vault na nuvem permanece intacto.')){
+    if(confirm('Sair desta configuração? Os dados na nuvem continuam seguros.')){
       localStorage.removeItem(LI);S.screen='setup';S.error=null;render();
     }
   });
@@ -730,52 +728,45 @@ function bind(){
       const u=S.vault.users.find(x=>x.id===b.dataset.uid);if(!u)return;
       if(!confirm(`Remover "${u.name}"?`))return;
       S.vault.users=S.vault.users.filter(x=>x.id!==b.dataset.uid);
-      await persist();toast('Usuário removido','s');render();
+      await persist();render();
     }));
   on('btn-svu',async()=>{
     const name=(document.getElementById('f-un')?.value||'').trim();
-    if(!name){toast('Digite um nome','e');return;}
+    if(!name)return;
     const users=S.vault.users||[];
-    const dup=users.some(u=>u.name.toLowerCase()===name.toLowerCase()&&u.id!==S.editUserId);
-    if(dup){toast('Já existe um usuário com esse nome','e');return;}
     if(S.editUserId){
       const i=users.findIndex(x=>x.id===S.editUserId);
-      if(i>=0){const old=users[i].name;users[i].name=name;S.vault.entries.forEach(e=>{if(e.owner===old)e.owner=name;});if(S.filter===old)S.filter=name;}
+      if(i>=0) users[i].name=name;
       S.editUserId=null;
     }else{
       if(!S.vault.users)S.vault.users=[];
       S.vault.users.push({id:uid(),name});
     }
-    await persist();toast(S.editUserId?'Atualizado':'Usuário adicionado ✓','s');render();
+    await persist();render();
   });
-  on('btn-cncu',()=>{S.editUserId=null;render();});
 
   // ---- ADD/EDIT ----
   on('btn-bk',()=>{S.editId=null;S.editUserId=null;S.showP.form=false;S.screen=S.vault?'vault':'locked';render();});
   on('btn-gpw',()=>{
     const pw=genPwd();const inp=$('f-pw');
-    if(inp){inp.value=pw;inp.type='text';S.showP.form=true;
-      const eye=document.querySelector('.bey[data-id="form"]');if(eye)eye.textContent='🙈';}
-    toast('Senha gerada!','s');
+    if(inp){inp.value=pw;inp.type='text';S.showP.form=true;}
   });
   on('btn-sv',async()=>{
     const lb=($('f-lb')?.value||'').trim();
     const pw=($('f-pw')?.value||'').trim();
-    if(!lb||!pw){toast('Nome e senha são obrigatórios','e');return;}
+    if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}
     const entry={label:lb,username:($('f-us')?.value||'').trim(),
       password:pw,url:($('f-ur')?.value||'').trim(),
       owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),
       notes:($('f-nt')?.value||'').trim()};
-    const wasEd=!!S.editId;
-    if(wasEd)updE(S.editId,entry);else addE(entry);
+    if(!!S.editId) updE(S.editId,entry); else addE(entry);
     await persist();
-    S.editId=null;S.showP.form=false;S.screen='vault';render();
-    toast(wasEd?'Senha atualizada ✓':'Senha adicionada 🎉','s');
+    S.editId=null;S.screen='vault';render();
   });
   on('btn-de',async()=>{
     if(!confirm('Excluir permanentemente?'))return;
     delE(S.editId);await persist();
-    S.editId=null;S.screen='vault';render();toast('Senha removida','s');
+    S.editId=null;S.screen='vault';render();
   });
 
   // ---- EXPORT ----
@@ -789,28 +780,11 @@ function bind(){
   on('btn-tg-cfg',()=>{S.error=null;S.screen='tgconfig';render();});
   on('btn-tg',async()=>{
     const tg=S.vault?.telegram||{};
-    if(!tg.token||!tg.chatId){toast('Configure o bot primeiro','e');return;}
-    const btn=$('btn-tg');if(btn){btn.disabled=true;btn.textContent='⏳ Enviando…';}
     try{
       const blob=await enc(S.vault,S.key);
       await sendTelegram(tg.token,tg.chatId,blob);
-      toast('Backup enviado para o Telegram ✓','s');
+      toast('Enviado para o Telegram ✓','s');
     }catch(e){toast('Erro: '+e.message,'e');}
-    finally{if(btn){btn.disabled=false;btn.textContent='📨 Enviar para o Telegram';}}
-  });
-  on('btn-im',()=>$('f-im')?.click());
-  $('f-im')?.addEventListener('change',e=>{
-    const f=e.target.files[0];if(!f)return;
-    const r=new FileReader();
-    r.onload=async ev=>{
-      try{
-        S.vault=await dec(ev.target.result.trim(),S.key);
-        if(!S.vault.users)S.vault.users=[];
-        await persist();
-        toast('Vault importado e sincronizado ✓','s');render();
-      }catch{toast('Erro ao importar — chave incompatível?','e');}
-    };
-    r.readAsText(f);
   });
   on('btn-ck',()=>{clip(S.key);toast('Chave copiada!','s');});
 
@@ -818,30 +792,12 @@ function bind(){
   on('btn-tg-save',async()=>{
     const token=($('tg-token')?.value||'').trim();
     const chatId=($('tg-chatid')?.value||'').trim();
-    if(!token||!chatId){toast('Preencha token e chat ID','e');return;}
+    if(!token||!chatId)return;
     S.vault.telegram={token,chatId};
-    await persist();toast('Configuração salva ✓','s');S.screen='export';S.error=null;render();
-  });
-  on('btn-tg-test',async()=>{
-    const tg=S.vault?.telegram||{};
-    const btn=$('btn-tg-test');if(btn){btn.disabled=true;btn.textContent='⏳ Testando…';}
-    try{
-      const blob=await enc(S.vault,S.key);
-      await sendTelegram(tg.token,tg.chatId,blob);
-      toast('Teste enviado ✓','s');
-    }catch(e){S.error='Erro: '+e.message;render();}
-    finally{if(btn){btn.disabled=false;btn.textContent='🧪 Testar envio';}}
-  });
-  on('btn-tg-del',async()=>{
-    if(!confirm('Remover configuração do Telegram?'))return;
-    delete S.vault.telegram;await persist();
-    toast('Configuração removida','s');S.screen='export';render();
+    await persist();S.screen='export';render();
   });
 }
 
-// ================================================================
-//  GO
-// ================================================================
 init();
 </script>
 </body>
