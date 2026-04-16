@@ -32,11 +32,11 @@ As senhas **nunca saem do seu dispositivo** em texto claro. Sem a tag NFC, o arq
 - App **NFC Tools** instalado no Android ([Play Store](https://play.google.com/store/apps/details?id=com.wakdev.wdnfc))
 - Uma **tag NFC** (NTAG213 ou similar — encontrada em papelaria ou lojas online)
 
-### Passo a passo
+### Opção A — Vault novo
 
 **1. Abra o app**
 
-Acesse `index.html` pelo Chrome. Na primeira vez, você verá a tela de configuração.
+Acesse `index.html` pelo Chrome. Na primeira vez, você verá a tela de configuração. Selecione **"Vault novo"**.
 
 **2. Gere a chave de segurança**
 
@@ -58,6 +58,15 @@ Abra o **NFC Tools** no Android:
 
 Volte ao NFC Vault e clique em **"Já gravei na tag — Criar Vault"**.  
 Pronto! O vault está criado e você já está dentro.
+
+### Opção B — Já tenho um vault
+
+Se você já possui um arquivo `.nfcv` exportado de outro dispositivo:
+
+1. Na tela inicial, selecione **"Já tenho um vault"**
+2. Toque em **"Selecionar arquivo .nfcv"** e escolha o arquivo
+3. Cole a chave de 64 caracteres no campo exibido
+4. Clique em **"Desbloquear vault"**
 
 ---
 
@@ -112,17 +121,33 @@ Os usuários são as pessoas que vão usar o vault. Cada senha é vinculada a um
 
 > ⚠️ As senhas ficam no **localStorage do Chrome** — se limpar os dados do navegador ou trocar de dispositivo, o vault some. **Faça backup regularmente.**
 
-### Exportar vault
+### Exportar vault (arquivo)
 
 1. Botão ⬇️ (canto superior direito) → **"Baixar vault.nfcv"**
 2. Salve o arquivo em local seguro: Google Drive, OneDrive, pen drive, etc.
 
 O arquivo `.nfcv` está **criptografado** — pode ser armazenado em qualquer lugar sem risco.
 
+### Backup via Telegram
+
+O app permite enviar o vault criptografado direto para o seu Telegram com um botão. A configuração do bot fica salva **dentro do vault** e vai junto ao exportar o `.nfcv`.
+
+**Configurar o bot:**
+
+1. No Telegram, busque **@BotFather** → digite `/newbot` → siga as instruções → copie o **token**
+2. Busque o bot criado → clique em **Start**
+3. Acesse no navegador: `https://api.telegram.org/bot<TOKEN>/getUpdates` → copie o valor de `id` dentro de `chat`
+4. No app: botão **⬇️** → **⚙️ Configurar bot Telegram** → cole token + chat ID → salve
+5. Use **🧪 Testar envio** para confirmar
+
+**Enviar backup:**
+
+Botão ⬇️ → **📨 Enviar para o Telegram** — o arquivo `.nfcv` chega no seu chat como documento.
+
 ### Importar vault em outro dispositivo
 
 1. Transfira o arquivo `.nfcv` para o novo dispositivo
-2. Abra o NFC Vault → botão ⬇️ → **"Selecionar arquivo"**
+2. Abra o NFC Vault → selecione **"Já tenho um vault"** (primeira vez) ou botão ⬇️ → **"Selecionar arquivo"**
 3. Escolha o `.nfcv`
 4. Desbloqueie normalmente com a tag NFC ou a chave
 
@@ -131,8 +156,9 @@ O arquivo `.nfcv` está **criptografado** — pode ser armazenado em qualquer lu
 Cada dispositivo tem seu próprio localStorage — você precisa importar o `.nfcv` manualmente quando houver atualizações. Sugestão de rotina:
 
 ```
-Adicionar/editar senhas → Exportar .nfcv → Salvar no Google Drive → 
-No outro dispositivo: importar o .nfcv atualizado
+Adicionar/editar senhas → Enviar backup pelo Telegram (ou exportar .nfcv)
+       ↓
+No outro dispositivo: baixar o .nfcv do Telegram → importar → desbloquear
 ```
 
 ---
@@ -164,8 +190,9 @@ Para acessar de qualquer lugar sem precisar carregar o arquivo:
 | Implementação | Web Crypto API nativa do navegador |
 | Chave | 256 bits gerados por `crypto.getRandomValues` |
 | IV | 96 bits aleatórios por operação de criptografia |
+| Config Telegram | Salva criptografada dentro do vault |
 | Dependências externas | Nenhuma |
-| Dados enviados a servidores | Nenhum |
+| Dados enviados a servidores | Nenhum (exceto Telegram API no backup) |
 
 ### O que acontece se eu perder a tag NFC?
 
@@ -197,4 +224,5 @@ O arquivo `.nfcv` gerado pelo app **não deve ser versionado** — adicione ao `
 - **Web Crypto API** — criptografia AES-256-GCM nativa
 - **Web NFC API** — leitura de tags NFC (Chrome Android 89+)
 - **localStorage** — armazenamento local no navegador
+- **Telegram Bot API** — envio de backup criptografado
 - HTML + CSS + JavaScript puro — zero dependências, zero frameworks
