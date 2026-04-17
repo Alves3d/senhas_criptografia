@@ -119,9 +119,13 @@ body{font-family:var(--sans);color:var(--text);min-height:100dvh;max-width:480px
   border-radius:50%;animation:spin .75s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
-::-webkit-scrollbar{width:3px}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-</style>
+.search-bar{padding:8px 14px 2px;position:sticky;top:57px;background:rgba(4,4,9,.92);backdrop-filter:blur(12px);z-index:19}
+.search-bar input{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 14px 9px 36px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;transition:border-color .15s}
+.search-bar input:focus{border-color:var(--accent)}
+.search-wrap{position:relative}
+.search-wrap::before{content:'🔍';position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none}
+.search-clear{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:2px}
+
 </head>
 <body>
 <div id="app"></div>
@@ -141,7 +145,7 @@ async function vaultId(k){const b=await crypto.subtle.digest('SHA-256',new TextE
 async function fbRead(k){const id=await vaultId(k);const s=await get(child(ref(db),`vaults/${id}/data`));return s.exists()?s.val():null;}
 async function fbWrite(k,blob){const id=await vaultId(k);await set(ref(db,`vaults/${id}/data`),blob);}
 
-const S={screen:'loading',vault:null,key:null,editId:null,editUserId:null,error:null,scanning:false,showP:{},filter:'Todos',genKey:null,setupTab:'new',setupImported:false};
+const S={screen:'loading',vault:null,key:null,editId:null,editUserId:null,error:null,scanning:false,showP:{},filter:'Todos',genKey:null,setupTab:'new',setupImported:false,search:''};
 const LI='nfcv3_init';
 const BADGE_COLORS=[{bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},{bg:'rgba(251,191,36,.15)',color:'#fbbf24'},{bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},{bg:'rgba(248,113,113,.15)',color:'#f87171'},{bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},{bg:'rgba(52,211,153,.15)',color:'#6ee7b7'}];
 function badgeStyle(name){const u=S.vault?.users||[];const i=u.findIndex(x=>x.name===name);const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];return`background:${c.bg};color:${c.color}`;}
@@ -296,9 +300,13 @@ function rLocked(){
 
 function rVault(){
   const users=S.vault.users||[];
-  const list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
-  const cards=list.length===0?`<div class="empty">Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.</div>`:list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
-  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div><div class="tbar-title">🔐 Vault</div><div class="tbar-side"><button class="ibtn" id="btn-exp">⬇️</button><button class="ibtn" id="btn-lk">🔒</button></div></div><div class="tabs">${['Todos',...users.map(u=>u.name)].map(o=>`<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="elist">${cards}</div><button class="fab" id="btn-add">+</button></div>`;}
+  const q=(S.search||'').toLowerCase().trim();
+  let list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
+  if(q) list=list.filter(e=>(e.label||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.url||'').toLowerCase().includes(q));
+  const cards=list.length===0?`<div class="empty">${q?`Nenhum resultado para "<strong>${esc(q)}</strong>"`:'Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.'}</div>`:list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div><div class="tbar-title">🔐 Vault</div><div class="tbar-side"><button class="ibtn" id="btn-exp">⬇️</button><button class="ibtn" id="btn-lk">🔒</button></div></div>
+<div class="search-bar"><div class="search-wrap"><input type="search" id="srch" placeholder="Pesquisar senha…" value="${esc(S.search)}" autocomplete="off" spellcheck="false">${q?`<button class="search-clear" id="btn-srch-clear">✕</button>`:''}</div></div>
+<div class="tabs">${['Todos',...users.map(u=>u.name)].map(o=>`<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="elist">${cards}</div><button class="fab" id="btn-add">+</button></div>`;}
 
 function rAdd(){
   const isEd=!!S.editId,e=isEd?S.vault.entries.find(x=>x.id===S.editId)||{}:{};
@@ -362,9 +370,11 @@ function bind(){
 
   // VAULT
   on('btn-add',()=>{S.editId=null;S.screen='add';render();});
-  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.screen='locked';render();initAutoUnlock();});
+  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.search='';S.screen='locked';render();initAutoUnlock();});
   on('btn-exp',()=>{S.screen='export';render();});
   on('btn-usr',()=>{S.editUserId=null;S.screen='users';render();});
+  on('btn-srch-clear',()=>{S.search='';render();});
+  document.getElementById('srch')?.addEventListener('input',e=>{S.search=e.target.value;render();});
 
   // USERS
   document.querySelectorAll('.bedu').forEach(b=>b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
