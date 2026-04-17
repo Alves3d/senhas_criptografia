@@ -119,43 +119,29 @@ body{font-family:var(--sans);color:var(--text);min-height:100dvh;max-width:480px
   border-radius:50%;animation:spin .75s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
-.search-bar{padding:8px 14px 2px;position:sticky;top:57px;background:rgba(4,4,9,.92);backdrop-filter:blur(12px);z-index:19}
-.search-bar input{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 14px 9px 36px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;transition:border-color .15s}
-.search-bar input:focus{border-color:var(--accent)}
-.search-wrap{position:relative}
-.search-wrap::before{content:'🔍';position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:14px;pointer-events:none}
-.search-clear{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:2px}
-
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
 </head>
 <body>
 <div id="app"></div>
-<script>
-// ================================================================
-//  FIREBASE REST API  (sem SDK — sem eval — funciona no GitHub Pages)
-// ================================================================
-const FB_URL="https://cipherchat-8d3dd-default-rtdb.firebaseio.com";
-const FB_KEY=["AIzaSyAyVVDf3","4Nsq4vJ7GFovADWQUi","wAQIMbAo"].join('');
+<script type="module">
+import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, set, get, child }
+                            from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
-async function vaultId(k){
-  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(k));
-  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);
-}
-async function fbRead(k){
-  const id=await vaultId(k);
-  const r=await fetch(`${FB_URL}/vaults/${id}/data.json?key=${FB_KEY}`);
-  if(!r.ok) throw new Error('Erro Firebase '+r.status);
-  const v=await r.json();
-  return v===null?null:v;
-}
-async function fbWrite(k,blob){
-  const id=await vaultId(k);
-  const r=await fetch(`${FB_URL}/vaults/${id}/data.json?key=${FB_KEY}`,{
-    method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(blob)
-  });
-  if(!r.ok) throw new Error('Erro Firebase '+r.status);
-}
+const p1="AIzaSyAyVVDf3",p2="4Nsq4vJ7GFovADWQUi",p3="wAQIMbAo";
+const fbApp=initializeApp({apiKey:p1+p2+p3,authDomain:"cipherchat-8d3dd.firebaseapp.com",
+  databaseURL:"https://cipherchat-8d3dd-default-rtdb.firebaseio.com",projectId:"cipherchat-8d3dd",
+  storageBucket:"cipherchat-8d3dd.firebasestorage.app",messagingSenderId:"373800191486",
+  appId:"1:373800191486:web:8679aef24075ff9cb96caf"});
+const db=getDatabase(fbApp);
 
-const S={screen:'loading',vault:null,key:null,editId:null,editUserId:null,error:null,scanning:false,showP:{},filter:'Todos',genKey:null,setupTab:'new',setupImported:false,search:''};
+async function vaultId(k){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(k));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);}
+async function fbRead(k){const id=await vaultId(k);const s=await get(child(ref(db),`vaults/${id}/data`));return s.exists()?s.val():null;}
+async function fbWrite(k,blob){const id=await vaultId(k);await set(ref(db,`vaults/${id}/data`),blob);}
+
+const S={screen:'loading',vault:null,key:null,editId:null,editUserId:null,error:null,scanning:false,showP:{},filter:'Todos',genKey:null,setupTab:'new',setupImported:false};
 const LI='nfcv3_init';
 const BADGE_COLORS=[{bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},{bg:'rgba(251,191,36,.15)',color:'#fbbf24'},{bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},{bg:'rgba(248,113,113,.15)',color:'#f87171'},{bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},{bg:'rgba(52,211,153,.15)',color:'#6ee7b7'}];
 function badgeStyle(name){const u=S.vault?.users||[];const i=u.findIndex(x=>x.name===name);const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];return`background:${c.bg};color:${c.color}`;}
@@ -310,13 +296,9 @@ function rLocked(){
 
 function rVault(){
   const users=S.vault.users||[];
-  const q=(S.search||'').toLowerCase().trim();
-  let list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
-  if(q) list=list.filter(e=>(e.label||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.url||'').toLowerCase().includes(q));
-  const cards=list.length===0?`<div class="empty">${q?`Nenhum resultado para "<strong>${esc(q)}</strong>"`:'Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.'}</div>`:list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
-  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div><div class="tbar-title">🔐 Vault</div><div class="tbar-side"><button class="ibtn" id="btn-exp">⬇️</button><button class="ibtn" id="btn-lk">🔒</button></div></div>
-<div class="search-bar"><div class="search-wrap"><input type="search" id="srch" placeholder="Pesquisar senha…" value="${esc(S.search)}" autocomplete="off" spellcheck="false">${q?`<button class="search-clear" id="btn-srch-clear">✕</button>`:''}</div></div>
-<div class="tabs">${['Todos',...users.map(u=>u.name)].map(o=>`<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="elist">${cards}</div><button class="fab" id="btn-add">+</button></div>`;}
+  const list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
+  const cards=list.length===0?`<div class="empty">Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.</div>`:list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div><div class="tbar-title">🔐 Vault</div><div class="tbar-side"><button class="ibtn" id="btn-exp">⬇️</button><button class="ibtn" id="btn-lk">🔒</button></div></div><div class="tabs">${['Todos',...users.map(u=>u.name)].map(o=>`<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="elist">${cards}</div><button class="fab" id="btn-add">+</button></div>`;}
 
 function rAdd(){
   const isEd=!!S.editId,e=isEd?S.vault.entries.find(x=>x.id===S.editId)||{}:{};
@@ -336,25 +318,6 @@ function rTgConfig(){
   return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">✈️ Telegram Bot</div><div class="tbar-side"></div></div><div style="padding:14px"><div class="ig" style="margin-bottom:12px"><label>Token do Bot</label><input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}"></div><div class="ig" style="margin-bottom:14px"><label>Chat ID</label><input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}"></div><button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}</div></div>`;}
 
 async function sendTelegram(token,chatId,blob){const date=new Date().toISOString().slice(0,10);const fd=new FormData();fd.append('chat_id',chatId);fd.append('caption',`🔐 NFC Vault — backup ${date}`);fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});const j=await r.json();if(!j.ok)throw new Error(j.description||'Erro ao enviar');}
-
-function updateVaultList(){
-  const users=S.vault?.users||[];
-  const q=(S.search||'').toLowerCase().trim();
-  let list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
-  if(q) list=list.filter(e=>(e.label||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.url||'').toLowerCase().includes(q));
-  const elistEl=document.querySelector('.elist');
-  if(!elistEl) return;
-  // botão clear
-  const wrap=document.querySelector('.search-wrap');
-  if(wrap){const old=wrap.querySelector('.search-clear');if(q&&!old){const b=document.createElement('button');b.className='search-clear';b.id='btn-srch-clear';b.textContent='✕';b.addEventListener('click',()=>{S.search='';const el=document.getElementById('srch');if(el)el.value='';updateVaultList();});wrap.appendChild(b);}else if(!q&&old)old.remove();}
-  if(list.length===0){elistEl.innerHTML=`<div class="empty">${q?`Nenhum resultado para "<strong>${esc(q)}</strong>"`:'Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.'}</div>`;return;}
-  elistEl.innerHTML=list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
-  // re-bind dos botões da lista
-  document.querySelectorAll('.bey').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.id==='form')return;S.showP[b.dataset.id]=!S.showP[b.dataset.id];updateVaultList();}));
-  document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
-  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async ev=>{ev.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');updateVaultList();}));
-  document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',e=>{if(e.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
-}
 
 function bind(){
   const $=id=>document.getElementById(id);
@@ -399,11 +362,9 @@ function bind(){
 
   // VAULT
   on('btn-add',()=>{S.editId=null;S.screen='add';render();});
-  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.search='';S.screen='locked';render();initAutoUnlock();});
+  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.screen='locked';render();initAutoUnlock();});
   on('btn-exp',()=>{S.screen='export';render();});
   on('btn-usr',()=>{S.editUserId=null;S.screen='users';render();});
-  on('btn-srch-clear',()=>{S.search='';const el=document.getElementById('srch');if(el)el.value='';updateVaultList();});
-  document.getElementById('srch')?.addEventListener('input',e=>{S.search=e.target.value;updateVaultList();});
 
   // USERS
   document.querySelectorAll('.bedu').forEach(b=>b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
