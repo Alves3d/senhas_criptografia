@@ -327,6 +327,25 @@ function rTgConfig(){
 
 async function sendTelegram(token,chatId,blob){const date=new Date().toISOString().slice(0,10);const fd=new FormData();fd.append('chat_id',chatId);fd.append('caption',`🔐 NFC Vault — backup ${date}`);fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});const j=await r.json();if(!j.ok)throw new Error(j.description||'Erro ao enviar');}
 
+function updateVaultList(){
+  const users=S.vault?.users||[];
+  const q=(S.search||'').toLowerCase().trim();
+  let list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
+  if(q) list=list.filter(e=>(e.label||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q)||(e.url||'').toLowerCase().includes(q));
+  const elistEl=document.querySelector('.elist');
+  if(!elistEl) return;
+  // botão clear
+  const wrap=document.querySelector('.search-wrap');
+  if(wrap){const old=wrap.querySelector('.search-clear');if(q&&!old){const b=document.createElement('button');b.className='search-clear';b.id='btn-srch-clear';b.textContent='✕';b.addEventListener('click',()=>{S.search='';const el=document.getElementById('srch');if(el)el.value='';updateVaultList();});wrap.appendChild(b);}else if(!q&&old)old.remove();}
+  if(list.length===0){elistEl.innerHTML=`<div class="empty">${q?`Nenhum resultado para "<strong>${esc(q)}</strong>"`:'Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.'}</div>`;return;}
+  elistEl.innerHTML=list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
+  // re-bind dos botões da lista
+  document.querySelectorAll('.bey').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.id==='form')return;S.showP[b.dataset.id]=!S.showP[b.dataset.id];updateVaultList();}));
+  document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
+  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async ev=>{ev.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');updateVaultList();}));
+  document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',e=>{if(e.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
+}
+
 function bind(){
   const $=id=>document.getElementById(id);
   const on=(id,fn)=>$(id)?.addEventListener('click',fn);
@@ -373,8 +392,8 @@ function bind(){
   on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.search='';S.screen='locked';render();initAutoUnlock();});
   on('btn-exp',()=>{S.screen='export';render();});
   on('btn-usr',()=>{S.editUserId=null;S.screen='users';render();});
-  on('btn-srch-clear',()=>{S.search='';render();});
-  document.getElementById('srch')?.addEventListener('input',e=>{S.search=e.target.value;render();});
+  on('btn-srch-clear',()=>{S.search='';const el=document.getElementById('srch');if(el)el.value='';updateVaultList();});
+  document.getElementById('srch')?.addEventListener('input',e=>{S.search=e.target.value;updateVaultList();});
 
   // USERS
   document.querySelectorAll('.bedu').forEach(b=>b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
