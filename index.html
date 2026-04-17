@@ -74,7 +74,7 @@ body{font-family:var(--sans);color:var(--text);min-height:100dvh;max-width:480px
 .div-or{text-align:center;color:var(--text3);font-size:12px;margin:8px 0;position:relative}
 .div-or::before,.div-or::after{content:'';position:absolute;top:50%;width:35%;height:1px;background:var(--border)}
 .div-or::before{left:5%}.div-or::after{right:5%}
-.nfc-card{text-align:center;padding:28px 20px}
+.nfc-card{text-align:center;padding:24px 20px}
 .nfc-ico{font-size:56px;display:block;margin-bottom:10px;line-height:1}
 .nfc-ico.pulse{animation:nfc 1.6s ease-in-out infinite}
 @keyframes nfc{0%,100%{transform:scale(1);filter:drop-shadow(0 0 0px rgba(91,94,247,0))}
@@ -125,179 +125,111 @@ code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
 </head>
 <body>
 <div id="app"></div>
-
 <script type="module">
 import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getDatabase, ref, set, get, child }
                             from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
-// ================================================================
-//  FIREBASE (API KEY OBFUSCADA)
-// ================================================================
-const p1 = "AIzaSyAyVVDf3";
-const p2 = "4Nsq4vJ7GFovADWQUi";
-const p3 = "wAQIMbAo";
+const p1="AIzaSyAyVVDf3",p2="4Nsq4vJ7GFovADWQUi",p3="wAQIMbAo";
+const fbApp=initializeApp({apiKey:p1+p2+p3,authDomain:"cipherchat-8d3dd.firebaseapp.com",
+  databaseURL:"https://cipherchat-8d3dd-default-rtdb.firebaseio.com",projectId:"cipherchat-8d3dd",
+  storageBucket:"cipherchat-8d3dd.firebasestorage.app",messagingSenderId:"373800191486",
+  appId:"1:373800191486:web:8679aef24075ff9cb96caf"});
+const db=getDatabase(fbApp);
 
-const fbApp = initializeApp({
-  apiKey:            p1 + p2 + p3,
-  authDomain:        "cipherchat-8d3dd.firebaseapp.com",
-  databaseURL:       "https://cipherchat-8d3dd-default-rtdb.firebaseio.com",
-  projectId:         "cipherchat-8d3dd",
-  storageBucket:     "cipherchat-8d3dd.firebasestorage.app",
-  messagingSenderId: "373800191486",
-  appId:             "1:373800191486:web:8679aef24075ff9cb96caf",
-});
-const db = getDatabase(fbApp);
+async function vaultId(k){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(k));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);}
+async function fbRead(k){const id=await vaultId(k);const s=await get(child(ref(db),`vaults/${id}/data`));return s.exists()?s.val():null;}
+async function fbWrite(k,blob){const id=await vaultId(k);await set(ref(db,`vaults/${id}/data`),blob);}
 
-// ID derivado da chave para localizar o slot sem expor a chave
-async function vaultId(hexKey){
-  const b   = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hexKey));
-  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);
-}
-
-async function fbRead(hexKey){
-  const id   = await vaultId(hexKey);
-  const snap = await get(child(ref(db), `vaults/${id}/data`));
-  return snap.exists() ? snap.val() : null;
-}
-
-async function fbWrite(hexKey, blob){
-  const id = await vaultId(hexKey);
-  await set(ref(db, `vaults/${id}/data`), blob);
-}
-
-// ================================================================
-//  STATE
-// ================================================================
-const S={
-  screen:'loading', vault:null, key:null,
-  editId:null, editUserId:null, error:null, scanning:false,
-  showP:{}, filter:'Todos', genKey:null,
-  setupTab:'new', setupImported:false
-};
+const S={screen:'loading',vault:null,key:null,editId:null,editUserId:null,error:null,scanning:false,showP:{},filter:'Todos',genKey:null,setupTab:'new',setupImported:false};
 const LI='nfcv3_init';
+const BADGE_COLORS=[{bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},{bg:'rgba(251,191,36,.15)',color:'#fbbf24'},{bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},{bg:'rgba(248,113,113,.15)',color:'#f87171'},{bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},{bg:'rgba(52,211,153,.15)',color:'#6ee7b7'}];
+function badgeStyle(name){const u=S.vault?.users||[];const i=u.findIndex(x=>x.name===name);const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];return`background:${c.bg};color:${c.color}`;}
 
-const BADGE_COLORS=[
-  {bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},
-  {bg:'rgba(251,191,36,.15)',color:'#fbbf24'},
-  {bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},
-  {bg:'rgba(248,113,113,.15)',color:'#f87171'},
-  {bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},
-  {bg:'rgba(52,211,153,.15)',color:'#6ee7b7'},
-];
-function badgeStyle(name){
-  const u=S.vault?.users||[];
-  const i=u.findIndex(x=>x.name===name);
-  const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];
-  return`background:${c.bg};color:${c.color}`;
-}
-
-// ================================================================
-//  CRYPTO  AES-256-GCM
-// ================================================================
 const h2b=h=>new Uint8Array(h.match(/.{2}/g).map(b=>parseInt(b,16)));
-
-async function mkKey(){
-  const b=crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-async function enc(data,hex){
-  const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['encrypt']);
-  const iv=crypto.getRandomValues(new Uint8Array(12));
-  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(data)));
-  const o=new Uint8Array(12+ct.byteLength);
-  o.set(iv);o.set(new Uint8Array(ct),12);
-  return btoa(String.fromCharCode(...o));
-}
-async function dec(b64,hex){
-  const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['decrypt']);
-  const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
-  const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},k,b.slice(12));
-  return JSON.parse(new TextDecoder().decode(p));
-}
+async function mkKey(){return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function enc(data,hex){const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['encrypt']);const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(data)));const o=new Uint8Array(12+ct.byteLength);o.set(iv);o.set(new Uint8Array(ct),12);return btoa(String.fromCharCode(...o));}
+async function dec(b64,hex){const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['decrypt']);const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},k,b.slice(12));return JSON.parse(new TextDecoder().decode(p));}
 
 // ================================================================
-//  NFC
+//  NFC AUTO-SCAN
+//  startNFCScan() inicia leitura e chama callback com a chave lida.
+//  Não precisa de botão — só chamar a função.
 // ================================================================
-async function readNFC(){
-  if(!('NDEFReader' in window)) throw new Error('Web NFC não disponível — use Chrome no Android');
-  const r=new NDEFReader();
-  await r.scan();
-  return new Promise((res,rej)=>{
-    const t=setTimeout(()=>rej(new Error('Tempo esgotado. Tente novamente.')),30000);
-    r.addEventListener('reading',e=>{
-      clearTimeout(t);
+let _nfcAbort = null;
+
+async function startNFCScan(onKey){
+  if(!('NDEFReader' in window)) return false;
+  try{
+    _nfcAbort = new AbortController();
+    const reader = new NDEFReader();
+    await reader.scan({ signal: _nfcAbort.signal });
+    reader.addEventListener('reading', e=>{
       for(const rec of e.message.records){
-        if(rec.recordType==='text'){res(new TextDecoder(rec.encoding||'utf-8').decode(rec.data).trim());return;}
+        if(rec.recordType==='text'){
+          onKey(new TextDecoder(rec.encoding||'utf-8').decode(rec.data).trim());
+          return;
+        }
       }
-      rej(new Error('Tag sem registro de texto.'));
-    },{once:true});
-    r.addEventListener('error',e=>{clearTimeout(t);rej(new Error(e.message||'Erro NFC'));},{once:true});
+    }, { signal: _nfcAbort.signal });
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+function stopNFCScan(){
+  if(_nfcAbort){ _nfcAbort.abort(); _nfcAbort=null; }
+  S.scanning=false;
+}
+
+async function initAutoUnlock(){
+  if(!('NDEFReader' in window)) return;
+  S.scanning=true; render();
+  const ok = await startNFCScan(async key=>{
+    stopNFCScan();
+    try{
+      await unlock(key);
+      localStorage.setItem(LI,'1');
+      S.screen='vault'; render();
+      toast('Vault desbloqueado ✓','s');
+    }catch(err){
+      S.error=err.message; S.scanning=false; render();
+    }
   });
+  if(!ok){ S.scanning=false; render(); }
 }
 
-// ================================================================
-//  VAULT OPS
-// ================================================================
-async function persist(){
-  const blob = await enc(S.vault, S.key);
-  await fbWrite(S.key, blob);
-}
-
-async function unlock(hex){
-  const blob = await fbRead(hex);
-  if(!blob) throw new Error('Vault não encontrado na nuvem. Verifique a chave.');
-  S.vault = await dec(blob, hex);
-  if(!S.vault.users) S.vault.users=[];
-  S.key = hex;
-}
-
-const uid=()=>typeof crypto.randomUUID==='function'
-  ?crypto.randomUUID()
-  :Date.now().toString(36)+Math.random().toString(36).slice(2);
-
+async function persist(){await fbWrite(S.key, await enc(S.vault,S.key));}
+async function unlock(hex){const blob=await fbRead(hex);if(!blob)throw new Error('Vault não encontrado na nuvem.');S.vault=await dec(blob,hex);if(!S.vault.users)S.vault.users=[];S.key=hex;}
+const uid=()=>typeof crypto.randomUUID==='function'?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 function addE(e){S.vault.entries.push({...e,id:uid(),ts:Date.now()});}
 function updE(id,e){const i=S.vault.entries.findIndex(x=>x.id===id);if(i>=0)S.vault.entries[i]={...S.vault.entries[i],...e};}
 function delE(id){S.vault.entries=S.vault.entries.filter(e=>e.id!==id);}
 
-// ================================================================
-//  UTILS
-// ================================================================
 function clip(t){navigator.clipboard?.writeText(t).catch(()=>{const a=Object.assign(document.createElement('textarea'),{value:t});document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();});}
 function toast(msg,type='s'){document.querySelectorAll('.toast').forEach(x=>x.remove());const el=document.createElement('div');el.className=`toast t${type}`;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el?.remove(),2600);}
 function genPwd(n=16){const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a).map(b=>c[b%c.length]).join('');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
-// ================================================================
-//  INIT
-// ================================================================
 function init(){
   S.screen=localStorage.getItem(LI)?'locked':'setup';
   render();
+  // inicia NFC automaticamente ao abrir na tela de bloqueio
+  if(S.screen==='locked') initAutoUnlock();
 }
 
-// ================================================================
-//  RENDER
-// ================================================================
 function render(){
-  document.getElementById('app').innerHTML={
-    loading:rLoad,setup:rSetup,locked:rLocked,
-    vault:rVault,add:rAdd,export:rExport,users:rUsers,tgconfig:rTgConfig
-  }[S.screen]?.()??rLoad();
+  document.getElementById('app').innerHTML={loading:rLoad,setup:rSetup,locked:rLocked,vault:rVault,add:rAdd,export:rExport,users:rUsers,tgconfig:rTgConfig}[S.screen]?.()??rLoad();
   bind();
 }
 
 function rLoad(){return`<div class="screen center"><div class="spinner"></div></div>`;}
 
-// ---- SETUP ----
 function rSetup(){
-  return`
-<div class="screen">
-  <div class="hdr">
-    <span class="hdr-icon">🔐</span>
-    <div class="hdr-title">NFC Vault</div>
-    <div class="hdr-sub">Configuração inicial</div>
-  </div>
+  const nfc='NDEFReader' in window;
+  return`<div class="screen">
+  <div class="hdr"><span class="hdr-icon">🔐</span><div class="hdr-title">NFC Vault</div><div class="hdr-sub">Configuração inicial</div></div>
   <div style="padding:0 14px;margin-bottom:4px">
     <div class="btn-row">
       <button class="btn btn-p" id="btn-tab-new" style="${!S.setupTab||S.setupTab==='new'?'':'background:var(--bg3);box-shadow:none;color:var(--text2)'}">🆕 Novo Vault</button>
@@ -306,496 +238,152 @@ function rSetup(){
   </div>
   ${(!S.setupTab||S.setupTab==='new')?`
   <div class="steps">
-    <div class="step"><div class="step-n">1</div>
-      <div>Gere a <strong>chave de segurança</strong> abaixo</div></div>
-    <div class="step"><div class="step-n">2</div>
-      <div>Grave a chave na sua tag NFC via celular</div></div>
-    <div class="step"><div class="step-n">3</div>
-      <div>Clique em <strong>"Criar Vault"</strong></div></div>
+    <div class="step"><div class="step-n">1</div><div>Gere a <strong>chave de segurança</strong> abaixo</div></div>
+    <div class="step"><div class="step-n">2</div><div>Grave a chave na sua tag NFC via celular</div></div>
+    <div class="step"><div class="step-n">3</div><div>Clique em <strong>"Criar Vault"</strong></div></div>
   </div>
-  <div style="padding:6px 14px 0">
-    <button class="btn btn-o" id="btn-gen">⚡ Gerar chave aleatória</button>
-  </div>
+  <div style="padding:6px 14px 0"><button class="btn btn-o" id="btn-gen">⚡ Gerar chave aleatória</button></div>
   <div id="ksec" style="${S.genKey?'':'display:none'};padding:0 14px;margin-top:2px">
     <div class="key-box">${S.genKey||''}</div>
-    <div class="btn-row">
-      <button class="btn btn-o" id="btn-cpk">📋 Copiar chave</button>
-    </div>
+    <div class="btn-row"><button class="btn btn-o" id="btn-cpk">📋 Copiar chave</button></div>
     <button class="btn btn-g" id="btn-crt" style="margin-top:14px">✓ Já gravei na tag — Criar Vault</button>
-  </div>
-  `:`
+  </div>`:`
   <div style="padding:0 14px">
-    <div class="card" style="margin:0 0 10px">
-      <h3 style="margin-bottom:8px">Acesso pela Nuvem</h3>
-      <div class="ig">
-        <input type="text" id="inp-k-setup" class="mono-in"
-          placeholder="Cole sua chave de 64 caracteres aqui..."
-          autocomplete="off" spellcheck="false" style="font-size:12px">
-      </div>
-      <button class="btn btn-g" id="btn-cloud-setup" style="margin-top:6px">🔑 Entrar com Chave</button>
+    ${nfc?`
+    <div class="card nfc-card" style="margin:0 0 10px">
+      <span class="nfc-ico${S.scanning?' pulse':''}">📡</span>
+      <p style="margin:6px 0 10px;font-size:13px">${S.scanning?`<strong style="color:var(--accent-h)">Aproxime a tag NFC…</strong>`:'Aproxime a tag para desbloquear automaticamente'}</p>
+      ${!S.scanning?`<button class="btn btn-p" id="btn-nfc-setup" style="margin-top:0">📡 Ativar leitura NFC</button>`:''}
     </div>
-    
-    <div class="div-or">OU USAR ARQUIVO</div>
-
+    <div class="div-or">ou inserir chave manualmente</div>`:''}
     <div class="card" style="margin:0 0 10px">
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se você tem um backup <code>.nfcv</code>, selecione abaixo.</p>
+      <h3 style="margin-bottom:10px">🔑 Acesso pela Nuvem</h3>
+      <div class="ig"><input type="text" id="inp-k-setup" class="mono-in" placeholder="Cole sua chave de 64 caracteres aqui..." autocomplete="off" spellcheck="false" style="font-size:12px"></div>
+      <button class="btn btn-g" id="btn-cloud-setup">🔑 Entrar com Chave</button>
+    </div>
+    <div class="div-or">ou usar arquivo</div>
+    <div class="card" style="margin:0 0 10px">
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Se você tem um backup <code>.nfcv</code>:</p>
       <input type="file" id="f-im-setup" accept=".nfcv,.txt" style="display:none">
       <button class="btn btn-o" id="btn-im-setup">📂 Selecionar arquivo .nfcv</button>
-      ${S.setupImported?`
-      <div style="margin-top:12px">
-        <p style="color:var(--green);font-size:13px;margin-bottom:8px">✓ Arquivo carregado! Agora cole a chave para descriptografar:</p>
-        <div class="ig">
-            <input type="text" id="inp-k-file-setup" class="mono-in" placeholder="Chave do arquivo..." style="font-size:12px">
-        </div>
-        <button class="btn btn-g" id="btn-mk-file-setup" style="margin-top:6px">🔓 Abrir arquivo</button>
-      </div>`:''}
+      ${S.setupImported?`<div style="margin-top:12px"><p style="color:var(--green);font-size:13px;margin-bottom:8px">✓ Arquivo carregado! Cole a chave:</p><div class="ig"><input type="text" id="inp-k-file-setup" class="mono-in" placeholder="Chave do arquivo..." style="font-size:12px"></div><button class="btn btn-g" id="btn-mk-file-setup" style="margin-top:6px">🔓 Abrir arquivo</button></div>`:''}
     </div>
-  </div>
-  `}
+  </div>`}
   ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
-</div>`;
-}
+</div>`;}
 
-// ---- LOCKED ----
 function rLocked(){
   const nfc='NDEFReader' in window;
-  return`
-<div class="screen">
-  <div class="hdr">
-    <span class="hdr-icon">🔐</span>
-    <div class="hdr-title">NFC Vault</div>
-    <div class="hdr-sub">Vault bloqueado</div>
-  </div>
+  return`<div class="screen">
+  <div class="hdr"><span class="hdr-icon">🔐</span><div class="hdr-title">NFC Vault</div>
+    <div class="hdr-sub">${S.scanning?'Aproxime a tag NFC…':'Vault bloqueado'}</div></div>
   ${nfc?`
   <div class="card nfc-card">
     <span class="nfc-ico${S.scanning?' pulse':''}">📡</span>
-    <p style="margin:6px 0 14px;font-size:13px">
-      ${S.scanning?`<strong style="color:var(--accent-h)">Aproxime a tag NFC…</strong>`:'Use a tag NFC para desbloquear'}
-    </p>
-    <button class="btn btn-p" id="btn-nfc" ${S.scanning?'disabled':''}>
-      ${S.scanning?'⏳ Aguardando…':'📡 Aproximar tag NFC'}
-    </button>
+    <p style="margin:6px 0 14px;font-size:13px">${S.scanning?`<strong style="color:var(--accent-h)">Pronto! Aproxime a tag NFC…</strong>`:'Toque para ativar leitura NFC'}</p>
+    ${!S.scanning?`<button class="btn btn-p" id="btn-nfc">📡 Usar tag NFC</button>`:''}
   </div>
-  <div class="div-or">ou chave manual</div>
-  `:`
-  <div class="card"><p>Web NFC disponível apenas no <strong>Chrome para Android</strong>.</p></div>
-  `}
+  <div class="div-or">ou inserir chave</div>`:`<div class="card"><p>Web NFC disponível apenas no <strong>Chrome para Android</strong>.</p></div>`}
   <div class="card">
-    <div class="ig">
-      <input type="text" id="inp-k" class="mono-in"
-        placeholder="Cole sua chave aqui…"
-        autocomplete="off" spellcheck="false" style="font-size:12px">
-    </div>
+    <div class="ig"><input type="text" id="inp-k" class="mono-in" placeholder="Cole sua chave aqui…" autocomplete="off" spellcheck="false" style="font-size:12px"></div>
     <button class="btn btn-o" id="btn-mk">🔑 Desbloquear</button>
   </div>
   ${S.error?`<div class="err">${S.error}</div>`:''}
   <div style="text-align:center;padding:14px">
     <button class="btn-txt" id="btn-rst">Reconfigurar vault (Sair)</button>
   </div>
-</div>`;
-}
+</div>`;}
 
-// ---- VAULT ----
 function rVault(){
   const users=S.vault.users||[];
   const list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(e=>e.owner===S.filter);
-  const cards=list.length===0
-    ?`<div class="empty">Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.</div>`
-    :list.map(e=>{
-      const shown=S.showP[e.id];
-      return`
-<div class="ecard" data-id="${e.id}">
-  <div class="ehdr">
-    <div class="elabel">${esc(e.label)}</div>
-    <div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div>
-  </div>
-  ${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}
-  <div class="epwdr">
-    <span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span>
-    <div class="eacts">
-      <button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button>
-      <button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button>
-      <button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button>
-    </div>
-  </div>
-</div>`;
-    }).join('');
-  return`
-<div class="screen">
-  <div class="tbar">
-    <div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div>
-    <div class="tbar-title">🔐 Vault</div>
-    <div class="tbar-side">
-      <button class="ibtn" id="btn-exp">⬇️</button>
-      <button class="ibtn" id="btn-lk">🔒</button>
-    </div>
-  </div>
-  <div class="tabs">
-    ${['Todos',...users.map(u=>u.name)].map(o=>
-      `<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`
-    ).join('')}
-  </div>
-  <div class="elist">${cards}</div>
-  <button class="fab" id="btn-add">+</button>
-</div>`;
-}
+  const cards=list.length===0?`<div class="empty">Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.</div>`:list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div><div class="tbar-title">🔐 Vault</div><div class="tbar-side"><button class="ibtn" id="btn-exp">⬇️</button><button class="ibtn" id="btn-lk">🔒</button></div></div><div class="tabs">${['Todos',...users.map(u=>u.name)].map(o=>`<button class="tab${S.filter===o?' on':''}" data-f="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="elist">${cards}</div><button class="fab" id="btn-add">+</button></div>`;}
 
-// ---- ADD/EDIT ----
 function rAdd(){
-  const isEd=!!S.editId;
-  const e=isEd?S.vault.entries.find(x=>x.id===S.editId)||{}:{};
-  return`
-<div class="screen">
-  <div class="tbar">
-    <div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div>
-    <div class="tbar-title">${isEd?'Editar senha':'Nova senha'}</div>
-    <div class="tbar-side"></div>
-  </div>
-  <div class="fbody">
-    <div class="ig">
-      <label>Nome / Serviço *</label>
-      <input type="text" id="f-lb" placeholder="Gmail, Banco, Netflix…" value="${esc(e.label||'')}">
-    </div>
-    <div class="ig">
-      <label>Usuário / E-mail</label>
-      <input type="text" id="f-us" placeholder="usuario@email.com" value="${esc(e.username||'')}" autocomplete="off">
-    </div>
-    <div class="ig">
-      <label>Senha *</label>
-      <div class="pwd-row">
-        <input type="${S.showP.form?'text':'password'}" id="f-pw"
-          placeholder="Senha" value="${esc(e.password||'')}"
-          autocomplete="new-password" class="mono-in">
-        <button class="ibtn-sm bey" data-id="form">${S.showP.form?'🙈':'👁️'}</button>
-        <button class="ibtn" id="btn-gpw" style="font-size:15px">🎲</button>
-      </div>
-    </div>
-    <div class="ig">
-      <label>Dono</label>
-      <select id="f-ow">
-        ${(S.vault.users||[]).length===0
-          ?`<option value="">— cadastre usuários primeiro —</option>`
-          :(S.vault.users).map(u=>`<option value="${esc(u.name)}"${(e.owner||'')=== u.name?' selected':''}>${esc(u.name)}</option>`).join('')
-        }
-      </select>
-    </div>
-    <div class="ig">
-      <label>Notas</label>
-      <textarea id="f-nt" placeholder="Observações opcionais…">${esc(e.notes||'')}</textarea>
-    </div>
-    <button class="btn btn-p" id="btn-sv">${isEd?'✓ Salvar alterações':'+ Adicionar senha'}</button>
-    ${isEd?`<button class="btn btn-r" id="btn-de" style="margin-top:10px">🗑️ Excluir esta senha</button>`:''}
-  </div>
-</div>`;
-}
+  const isEd=!!S.editId,e=isEd?S.vault.entries.find(x=>x.id===S.editId)||{}:{};
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">${isEd?'Editar senha':'Nova senha'}</div><div class="tbar-side"></div></div><div class="fbody"><div class="ig"><label>Nome / Serviço *</label><input type="text" id="f-lb" placeholder="Gmail, Banco, Netflix…" value="${esc(e.label||'')}"></div><div class="ig"><label>Usuário / E-mail</label><input type="text" id="f-us" placeholder="usuario@email.com" value="${esc(e.username||'')}" autocomplete="off"></div><div class="ig"><label>Senha *</label><div class="pwd-row"><input type="${S.showP.form?'text':'password'}" id="f-pw" placeholder="Senha" value="${esc(e.password||'')}" autocomplete="new-password" class="mono-in"><button class="ibtn-sm bey" data-id="form">${S.showP.form?'🙈':'👁️'}</button><button class="ibtn" id="btn-gpw" style="font-size:15px">🎲</button></div></div><div class="ig"><label>Dono</label><select id="f-ow">${(S.vault.users||[]).length===0?`<option value="">— cadastre usuários primeiro —</option>`:(S.vault.users).map(u=>`<option value="${esc(u.name)}"${(e.owner||'')===u.name?' selected':''}>${esc(u.name)}</option>`).join('')}</select></div><div class="ig"><label>Notas</label><textarea id="f-nt" placeholder="Observações opcionais…">${esc(e.notes||'')}</textarea></div><button class="btn btn-p" id="btn-sv">${isEd?'✓ Salvar alterações':'+ Adicionar senha'}</button>${isEd?`<button class="btn btn-r" id="btn-de" style="margin-top:10px">🗑️ Excluir esta senha</button>`:''}</div></div>`;}
 
-// ---- USERS ----
 function rUsers(){
-  const users=S.vault.users||[];
-  const isEd=!!S.editUserId;
-  const eu=isEd?users.find(x=>x.id===S.editUserId)||{}:{};
-  const ulist=users.length===0
-    ?`<div class="empty">Nenhum usuário cadastrado.</div>`
-    :users.map(u=>`
-<div class="ecard" style="display:flex;align-items:center;gap:12px;cursor:default">
-  <div class="ebadge" style="${badgeStyle(u.name)};padding:6px 12px;font-size:13px;font-weight:700;border-radius:10px">${esc(u.name.charAt(0).toUpperCase())}</div>
-  <div style="flex:1;font-size:15px;font-weight:600">${esc(u.name)}</div>
-  <button class="ibtn-sm bedu" data-uid="${u.id}">✏️</button>
-  <button class="ibtn-sm bdlu" data-uid="${u.id}">🗑️</button>
-</div>`).join('');
-  return`
-<div class="screen">
-  <div class="tbar">
-    <div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div>
-    <div class="tbar-title">👥 Usuários</div>
-    <div class="tbar-side"></div>
-  </div>
-  <div style="padding:10px 14px 0">
-    ${ulist}
-  </div>
-  <div class="card" style="margin-top:8px">
-    <h3 style="margin-bottom:12px">${isEd?'✏️ Editar usuário':'+ Novo usuário'}</h3>
-    <div class="ig">
-      <input type="text" id="f-un" placeholder="Ex: Matheus, Principal…" value="${esc(eu.name||'')}" maxlength="30">
-    </div>
-    <button class="btn btn-p" id="btn-svu" style="margin-top:6px">${isEd?'✓ Salvar':'+ Adicionar usuário'}</button>
-  </div>
-</div>`;
-}
+  const users=S.vault.users||[],isEd=!!S.editUserId,eu=isEd?users.find(x=>x.id===S.editUserId)||{}:{};
+  const ulist=users.length===0?`<div class="empty">Nenhum usuário cadastrado.</div>`:users.map(u=>`<div class="ecard" style="display:flex;align-items:center;gap:12px;cursor:default"><div class="ebadge" style="${badgeStyle(u.name)};padding:6px 12px;font-size:13px;font-weight:700;border-radius:10px">${esc(u.name.charAt(0).toUpperCase())}</div><div style="flex:1;font-size:15px;font-weight:600">${esc(u.name)}</div><button class="ibtn-sm bedu" data-uid="${u.id}">✏️</button><button class="ibtn-sm bdlu" data-uid="${u.id}">🗑️</button></div>`).join('');
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">👥 Usuários</div><div class="tbar-side"></div></div><div style="padding:10px 14px 0">${ulist}</div><div class="card" style="margin-top:8px"><h3 style="margin-bottom:12px">${isEd?'✏️ Editar usuário':'+ Novo usuário'}</h3><div class="ig"><input type="text" id="f-un" placeholder="Ex: Matheus, Principal…" value="${esc(eu.name||'')}" maxlength="30"></div><button class="btn btn-p" id="btn-svu" style="margin-top:6px">${isEd?'✓ Salvar':'+ Adicionar usuário'}</button>${isEd?`<button class="btn btn-o" id="btn-cncu" style="margin-top:4px">Cancelar</button>`:''}</div></div>`;}
 
-// ---- EXPORT ----
 function rExport(){
   const tg=S.vault?.telegram||{};
-  return`
-<div class="screen">
-  <div class="tbar">
-    <div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div>
-    <div class="tbar-title">Backup & Sync</div>
-    <div class="tbar-side"></div>
-  </div>
-  <div style="padding:6px 0">
-    <div class="card">
-      <h3>☁️ Nuvem Ativa</h3>
-      <p>O vault está sincronizado via Firebase. Suas alterações são salvas automaticamente.</p>
-    </div>
-    <div class="card">
-      <h3>📤 Exportar arquivo</h3>
-      <button class="btn btn-p" id="btn-dl">⬇️ Baixar vault.nfcv</button>
-    </div>
-    <div class="card">
-      <h3>✈️ Telegram Backup</h3>
-      <p style="margin-bottom:10px">${tg.token&&tg.chatId?'Bot configurado.':'Configure o bot para habilitar.'}</p>
-      ${tg.token&&tg.chatId
-        ?`<button class="btn btn-g" id="btn-tg">📨 Enviar para Telegram</button>
-           <button class="btn-txt" id="btn-tg-cfg">⚙️ Reconfigurar bot</button>`
-        :`<button class="btn btn-o" id="btn-tg-cfg">⚙️ Configurar bot Telegram</button>`}
-    </div>
-    <div class="card">
-      <h3>🔑 Chave Atual</h3>
-      <div class="key-box sm">${S.key}</div>
-      <button class="btn btn-o" id="btn-ck">📋 Copiar minha chave</button>
-    </div>
-  </div>
-</div>`;
-}
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">Backup & Sync</div><div class="tbar-side"></div></div><div style="padding:6px 0"><div class="card"><h3>☁️ Nuvem Ativa</h3><p>O vault está sincronizado via Firebase. Suas alterações são salvas automaticamente.</p></div><div class="card"><h3>📤 Exportar arquivo</h3><button class="btn btn-p" id="btn-dl">⬇️ Baixar vault.nfcv</button></div><div class="card"><h3>✈️ Telegram Backup</h3><p style="margin-bottom:10px">${tg.token&&tg.chatId?'Bot configurado.':'Configure o bot para habilitar.'}</p>${tg.token&&tg.chatId?`<button class="btn btn-g" id="btn-tg">📨 Enviar para Telegram</button><button class="btn-txt" id="btn-tg-cfg">⚙️ Reconfigurar bot</button>`:`<button class="btn btn-o" id="btn-tg-cfg">⚙️ Configurar bot Telegram</button>`}</div><div class="card"><h3>🔑 Chave Atual</h3><div class="key-box sm">${S.key}</div><button class="btn btn-o" id="btn-ck">📋 Copiar minha chave</button></div></div></div>`;}
 
-// ---- TG CONFIG ----
 function rTgConfig(){
   const tg=S.vault?.telegram||{};
-  return`
-<div class="screen">
-  <div class="tbar">
-    <div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div>
-    <div class="tbar-title">✈️ Telegram Bot</div>
-    <div class="tbar-side"></div>
-  </div>
-  <div style="padding:14px">
-    <div class="ig" style="margin-bottom:12px">
-      <label>Token do Bot</label>
-      <input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}">
-    </div>
-    <div class="ig" style="margin-bottom:14px">
-      <label>Chat ID</label>
-      <input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}">
-    </div>
-    <button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>
-    ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
-  </div>
-</div>`;
-}
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">✈️ Telegram Bot</div><div class="tbar-side"></div></div><div style="padding:14px"><div class="ig" style="margin-bottom:12px"><label>Token do Bot</label><input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}"></div><div class="ig" style="margin-bottom:14px"><label>Chat ID</label><input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}"></div><button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}</div></div>`;}
 
-// ================================================================
-//  TELEGRAM SEND
-// ================================================================
-async function sendTelegram(token,chatId,blob){
-  const date=new Date().toISOString().slice(0,10);
-  const fd=new FormData();
-  fd.append('chat_id',chatId);
-  fd.append('caption',`🔐 NFC Vault — backup ${date}`);
-  fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));
-  const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});
-  const j=await r.json();
-  if(!j.ok) throw new Error(j.description||'Erro ao enviar');
-}
+async function sendTelegram(token,chatId,blob){const date=new Date().toISOString().slice(0,10);const fd=new FormData();fd.append('chat_id',chatId);fd.append('caption',`🔐 NFC Vault — backup ${date}`);fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});const j=await r.json();if(!j.ok)throw new Error(j.description||'Erro ao enviar');}
 
-// ================================================================
-//  BIND
-// ================================================================
 function bind(){
   const $=id=>document.getElementById(id);
   const on=(id,fn)=>$(id)?.addEventListener('click',fn);
 
-  // tabs filtro
-  document.querySelectorAll('[data-f]').forEach(b=>
-    b.addEventListener('click',()=>{S.filter=b.dataset.f;render();}));
+  document.querySelectorAll('[data-f]').forEach(b=>b.addEventListener('click',()=>{S.filter=b.dataset.f;render();}));
 
-  // olho senha na listagem
-  document.querySelectorAll('.bey').forEach(b=>
-    b.addEventListener('click',()=>{
-      if(b.dataset.id==='form'){
-        const inp=$('f-pw');if(!inp)return;
-        const showing=inp.type==='text';
-        inp.type=showing?'password':'text';
-        b.textContent=showing?'👁️':'🙈';
-        S.showP.form=!showing;
-      }else{S.showP[b.dataset.id]=!S.showP[b.dataset.id];render();}
-    }));
+  document.querySelectorAll('.bey').forEach(b=>b.addEventListener('click',()=>{
+    if(b.dataset.id==='form'){const inp=$('f-pw');if(!inp)return;const showing=inp.type==='text';inp.type=showing?'password':'text';b.textContent=showing?'👁️':'🙈';S.showP.form=!showing;}
+    else{S.showP[b.dataset.id]=!S.showP[b.dataset.id];render();}
+  }));
 
-  document.querySelectorAll('.bcp').forEach(b=>
-    b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
+  document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
+  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');render();}));
+  document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',e=>{if(e.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
 
-  document.querySelectorAll('.bdl').forEach(b=>
-    b.addEventListener('click',async e=>{
-      e.stopPropagation();
-      if(!confirm('Excluir esta senha?'))return;
-      delE(b.dataset.id);await persist();toast('Senha removida','s');render();
-    }));
-
-  document.querySelectorAll('.ecard').forEach(c=>
-    c.addEventListener('click',e=>{
-      if(e.target.closest('.eacts'))return;
-      S.editId=c.dataset.id;S.screen='add';render();
-    }));
-
-  // ---- SETUP ----
-  on('btn-tab-new',()=>{S.setupTab='new';S.setupImported=false;S.error=null;render();});
-  on('btn-tab-imp',()=>{S.setupTab='imp';S.error=null;render();});
+  // SETUP
+  on('btn-tab-new',()=>{S.setupTab='new';S.setupImported=false;S.error=null;stopNFCScan();render();});
+  on('btn-tab-imp',()=>{S.setupTab='imp';S.error=null;render();initAutoUnlock();});
   on('btn-gen',async()=>{S.genKey=await mkKey();render();});
   on('btn-cpk',()=>{clip(S.genKey);toast('Chave copiada!','s');});
-  on('btn-crt',async()=>{
-    if(!S.genKey)return;
-    S.vault={entries:[],users:[]};S.key=S.genKey;
-    await persist();
-    localStorage.setItem(LI,'1');
-    S.screen='vault';S.genKey=null;render();
-    toast('Vault criado na nuvem! 🎉','s');
-  });
+  on('btn-crt',async()=>{if(!S.genKey)return;S.vault={entries:[],users:[]};S.key=S.genKey;await persist();localStorage.setItem(LI,'1');S.screen='vault';S.genKey=null;render();toast('Vault criado na nuvem! 🎉','s');});
 
-  // ACESSO DIRETO PELA NUVEM NA SETUP
-  on('btn-cloud-setup', async () => {
-    const k = ($('inp-k-setup')?.value || '').trim();
-    if (k.length !== 64) { S.error = 'A chave deve ter 64 caracteres hex.'; render(); return; }
-    try {
-        S.error = null;
-        toast('Conectando à nuvem...', 's');
-        await unlock(k);
-        localStorage.setItem(LI, '1');
-        S.screen = 'vault';
-        render();
-        toast('Vault carregado ✓', 's');
-    } catch (err) { S.error = err.message; render(); }
+  // NFC manual no setup
+  on('btn-nfc-setup',async()=>{S.scanning=true;S.error=null;render();await initAutoUnlock();});
+
+  on('btn-cloud-setup',async()=>{
+    const k=($('inp-k-setup')?.value||'').trim();
+    if(k.length!==64){S.error='A chave deve ter 64 caracteres hex.';render();return;}
+    try{S.error=null;await unlock(k);localStorage.setItem(LI,'1');S.screen='vault';render();toast('Vault carregado ✓','s');}
+    catch(err){S.error=err.message;render();}
   });
 
   on('btn-im-setup',()=>$('f-im-setup')?.click());
-  $('f-im-setup')?.addEventListener('change',e=>{
-    const f=e.target.files[0];if(!f)return;
-    const r=new FileReader();
-    r.onload=ev=>{
-      S._importBlob=ev.target.result.trim();
-      S.setupImported=true;S.error=null;render();
-    };
-    r.readAsText(f);
-  });
-  
-  on('btn-mk-file-setup',async()=>{
-    const k=($('inp-k-file-setup')?.value||'').trim();
-    if(k.length!==64){S.error='Chave incorreta.';render();return;}
-    try{
-      S.vault=await dec(S._importBlob,k);
-      S.key=k;
-      await persist();
-      localStorage.setItem(LI,'1');
-      S.screen='vault';render();
-      toast('Backup importado com sucesso!','s');
-    }catch{S.error='Chave incorreta para este arquivo.';render();}
-  });
+  $('f-im-setup')?.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{S._importBlob=ev.target.result.trim();S.setupImported=true;S.error=null;render();};r.readAsText(f);});
+  on('btn-mk-file-setup',async()=>{const k=($('inp-k-file-setup')?.value||'').trim();if(k.length!==64){S.error='Chave incorreta.';render();return;}try{S.vault=await dec(S._importBlob,k);S.key=k;await persist();localStorage.setItem(LI,'1');S.screen='vault';render();toast('Backup importado!','s');}catch{S.error='Chave incorreta para este arquivo.';render();}});
 
-  // ---- LOCKED ----
-  on('btn-nfc',async()=>{
-    S.scanning=true;S.error=null;render();
-    try{
-      const k=await readNFC();
-      await unlock(k);
-      S.scanning=false;S.screen='vault';render();
-      toast('Desbloqueado ✓','s');
-    }catch(err){S.scanning=false;S.error=err.message;render();}
-  });
-  on('btn-mk',async()=>{
-    const k=($('inp-k')?.value||'').trim();
-    if(k.length!==64){S.error='Chave inválida.';render();return;}
-    try{
-      await unlock(k);S.error=null;S.screen='vault';render();
-      toast('Desbloqueado ✓','s');
-    }catch{S.error='Chave incorreta ou sem internet.';render();}
-  });
-  on('btn-rst',()=>{
-    if(confirm('Sair desta configuração? Os dados na nuvem continuam seguros.')){
-      localStorage.removeItem(LI);S.screen='setup';S.error=null;render();
-    }
-  });
+  // LOCKED
+  on('btn-nfc',async()=>{S.scanning=true;S.error=null;render();await initAutoUnlock();});
+  on('btn-mk',async()=>{const k=($('inp-k')?.value||'').trim();if(k.length!==64){S.error='Chave inválida.';render();return;}try{stopNFCScan();await unlock(k);S.error=null;S.screen='vault';render();toast('Desbloqueado ✓','s');}catch{S.error='Chave incorreta ou sem internet.';render();}});
+  on('btn-rst',()=>{if(confirm('Sair? Os dados na nuvem continuam seguros.')){stopNFCScan();localStorage.removeItem(LI);S.screen='setup';S.error=null;render();}});
 
-  // ---- VAULT ----
+  // VAULT
   on('btn-add',()=>{S.editId=null;S.screen='add';render();});
-  on('btn-lk',()=>{S.vault=null;S.key=null;S.screen='locked';render();});
+  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.screen='locked';render();initAutoUnlock();});
   on('btn-exp',()=>{S.screen='export';render();});
   on('btn-usr',()=>{S.editUserId=null;S.screen='users';render();});
 
-  // ---- USERS ----
-  document.querySelectorAll('.bedu').forEach(b=>
-    b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
-  document.querySelectorAll('.bdlu').forEach(b=>
-    b.addEventListener('click',async()=>{
-      const u=S.vault.users.find(x=>x.id===b.dataset.uid);if(!u)return;
-      if(!confirm(`Remover "${u.name}"?`))return;
-      S.vault.users=S.vault.users.filter(x=>x.id!==b.dataset.uid);
-      await persist();render();
-    }));
-  on('btn-svu',async()=>{
-    const name=(document.getElementById('f-un')?.value||'').trim();
-    if(!name)return;
-    const users=S.vault.users||[];
-    if(S.editUserId){
-      const i=users.findIndex(x=>x.id===S.editUserId);
-      if(i>=0) users[i].name=name;
-      S.editUserId=null;
-    }else{
-      if(!S.vault.users)S.vault.users=[];
-      S.vault.users.push({id:uid(),name});
-    }
-    await persist();render();
-  });
+  // USERS
+  document.querySelectorAll('.bedu').forEach(b=>b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
+  document.querySelectorAll('.bdlu').forEach(b=>b.addEventListener('click',async()=>{const u=S.vault.users.find(x=>x.id===b.dataset.uid);if(!u||!confirm(`Remover "${u.name}"?`))return;S.vault.users=S.vault.users.filter(x=>x.id!==b.dataset.uid);await persist();render();}));
+  on('btn-svu',async()=>{const name=(document.getElementById('f-un')?.value||'').trim();if(!name)return;const users=S.vault.users||[];if(S.editUserId){const i=users.findIndex(x=>x.id===S.editUserId);if(i>=0)users[i].name=name;S.editUserId=null;}else{if(!S.vault.users)S.vault.users=[];S.vault.users.push({id:uid(),name});}await persist();render();});
+  on('btn-cncu',()=>{S.editUserId=null;render();});
 
-  // ---- ADD/EDIT ----
+  // ADD/EDIT
   on('btn-bk',()=>{S.editId=null;S.editUserId=null;S.showP.form=false;S.screen=S.vault?'vault':'locked';render();});
-  on('btn-gpw',()=>{
-    const pw=genPwd();const inp=$('f-pw');
-    if(inp){inp.value=pw;inp.type='text';S.showP.form=true;}
-  });
-  on('btn-sv',async()=>{
-    const lb=($('f-lb')?.value||'').trim();
-    const pw=($('f-pw')?.value||'').trim();
-    if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}
-    const entry={label:lb,username:($('f-us')?.value||'').trim(),
-      password:pw,url:($('f-ur')?.value||'').trim(),
-      owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),
-      notes:($('f-nt')?.value||'').trim()};
-    if(!!S.editId) updE(S.editId,entry); else addE(entry);
-    await persist();
-    S.editId=null;S.screen='vault';render();
-  });
-  on('btn-de',async()=>{
-    if(!confirm('Excluir permanentemente?'))return;
-    delE(S.editId);await persist();
-    S.editId=null;S.screen='vault';render();
-  });
+  on('btn-gpw',()=>{const pw=genPwd();const inp=$('f-pw');if(inp){inp.value=pw;inp.type='text';S.showP.form=true;const eye=document.querySelector('.bey[data-id="form"]');if(eye)eye.textContent='🙈';}toast('Senha gerada!','s');});
+  on('btn-sv',async()=>{const lb=($('f-lb')?.value||'').trim(),pw=($('f-pw')?.value||'').trim();if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}const entry={label:lb,username:($('f-us')?.value||'').trim(),password:pw,url:($('f-ur')?.value||'').trim(),owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),notes:($('f-nt')?.value||'').trim()};if(!!S.editId)updE(S.editId,entry);else addE(entry);await persist();S.editId=null;S.screen='vault';render();toast(!!S.editId?'Senha atualizada ✓':'Senha adicionada 🎉','s');});
+  on('btn-de',async()=>{if(!confirm('Excluir permanentemente?'))return;delE(S.editId);await persist();S.editId=null;S.screen='vault';render();});
 
-  // ---- EXPORT ----
-  on('btn-dl',async()=>{
-    const blob=await enc(S.vault,S.key);
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([blob],{type:'text/plain'}));
-    a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;
-    a.click();
-  });
+  // EXPORT
+  on('btn-dl',async()=>{const blob=await enc(S.vault,S.key);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([blob],{type:'text/plain'}));a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;a.click();});
   on('btn-tg-cfg',()=>{S.error=null;S.screen='tgconfig';render();});
-  on('btn-tg',async()=>{
-    const tg=S.vault?.telegram||{};
-    try{
-      const blob=await enc(S.vault,S.key);
-      await sendTelegram(tg.token,tg.chatId,blob);
-      toast('Enviado para o Telegram ✓','s');
-    }catch(e){toast('Erro: '+e.message,'e');}
-  });
+  on('btn-tg',async()=>{const tg=S.vault?.telegram||{};try{const blob=await enc(S.vault,S.key);await sendTelegram(tg.token,tg.chatId,blob);toast('Enviado para o Telegram ✓','s');}catch(e){toast('Erro: '+e.message,'e');}});
   on('btn-ck',()=>{clip(S.key);toast('Chave copiada!','s');});
-
-  // ---- TG CONFIG ----
-  on('btn-tg-save',async()=>{
-    const token=($('tg-token')?.value||'').trim();
-    const chatId=($('tg-chatid')?.value||'').trim();
-    if(!token||!chatId)return;
-    S.vault.telegram={token,chatId};
-    await persist();S.screen='export';render();
-  });
+  on('btn-tg-save',async()=>{const token=($('tg-token')?.value||'').trim(),chatId=($('tg-chatid')?.value||'').trim();if(!token||!chatId)return;S.vault.telegram={token,chatId};await persist();S.screen='export';render();});
 }
 
 init();
