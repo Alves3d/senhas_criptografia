@@ -159,6 +159,7 @@ function badgeStyle(name){const u=S.vault?.users||[];const i=u.findIndex(x=>x.na
 
 const h2b=h=>new Uint8Array(h.match(/.{2}/g).map(b=>parseInt(b,16)));
 async function mkKey(){return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function deriveKey(senha){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(senha),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode('nfcvault-salt-v1'),iterations:200000},base,256);return Array.from(new Uint8Array(bits)).map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function enc(data,hex){const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['encrypt']);const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(data)));const o=new Uint8Array(12+ct.byteLength);o.set(iv);o.set(new Uint8Array(ct),12);return btoa(String.fromCharCode(...o));}
 async function dec(b64,hex){const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['decrypt']);const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},k,b.slice(12));return JSON.parse(new TextDecoder().decode(p));}
 
@@ -204,11 +205,25 @@ function rSetup(){
     <div class="step"><div class="step-n">2</div><div>Grave a chave na sua tag NFC via celular</div></div>
     <div class="step"><div class="step-n">3</div><div>Clique em <strong>"Criar Vault"</strong></div></div>
   </div>
-  <div style="padding:6px 14px 0"><button class="btn btn-o" id="btn-gen">⚡ Gerar chave aleatória</button></div>
+  <div class="div-or" style="margin:12px 0 4px">criar com chave aleatória</div>
+  <div style="padding:0 14px"><button class="btn btn-o" id="btn-gen">⚡ Gerar chave aleatória</button></div>
   <div id="ksec" style="${S.genKey?'':'display:none'};padding:0 14px;margin-top:2px">
     <div class="key-box">${S.genKey||''}</div>
     <div class="btn-row"><button class="btn btn-o" id="btn-cpk">📋 Copiar chave</button></div>
     <button class="btn btn-g" id="btn-crt" style="margin-top:14px">✓ Já gravei na tag — Criar Vault</button>
+  </div>
+  <div class="div-or" style="margin:12px 0 4px">ou criar com senha memorável</div>
+  <div style="padding:0 14px">
+    <div class="card" style="margin:0">
+      <p style="margin-bottom:10px;font-size:12px;color:var(--text2)">Crie uma senha que você consiga memorizar. Mínimo 8 caracteres.</p>
+      <div class="ig" style="margin-bottom:8px">
+        <input type="password" id="inp-pwd-new" placeholder="Digite sua senha memorável" autocomplete="new-password">
+      </div>
+      <div class="ig" style="margin-bottom:8px">
+        <input type="password" id="inp-pwd-new2" placeholder="Confirme a senha" autocomplete="new-password">
+      </div>
+      <button class="btn btn-g" id="btn-crt-pwd">🔑 Criar Vault com senha</button>
+    </div>
   </div>`:`
   <div style="padding:0 14px">
     ${nfc?`
@@ -222,6 +237,12 @@ function rSetup(){
       <h3 style="margin-bottom:10px">🔑 Acesso pela Nuvem</h3>
       <div class="ig"><input type="text" id="inp-k-setup" class="mono-in" placeholder="Cole sua chave de 64 caracteres aqui..." autocomplete="off" spellcheck="false" style="font-size:12px"></div>
       <button class="btn btn-g" id="btn-cloud-setup">🔑 Entrar com Chave</button>
+    </div>
+    <div class="div-or">ou senha memorável</div>
+    <div class="card" style="margin:0 0 10px">
+      <h3 style="margin-bottom:10px">🔑 Entrar com Senha</h3>
+      <div class="ig"><input type="password" id="inp-pwd-setup" placeholder="Digite sua senha memorável" autocomplete="current-password"></div>
+      <button class="btn btn-g" id="btn-pwd-setup">🔓 Desbloquear com Senha</button>
     </div>
     <div class="div-or">ou usar arquivo</div>
     <div class="card" style="margin:0 0 10px">
@@ -247,8 +268,13 @@ function rLocked(){
   </div>
   <div class="div-or">ou inserir chave</div>`:`<div class="card"><p>Web NFC disponível apenas no <strong>Chrome para Android</strong>.</p></div>`}
   <div class="card">
-    <div class="ig"><input type="text" id="inp-k" class="mono-in" placeholder="Cole sua chave aqui…" autocomplete="off" spellcheck="false" style="font-size:12px"></div>
-    <button class="btn btn-o" id="btn-mk">🔑 Desbloquear</button>
+    <div class="ig"><input type="text" id="inp-k" class="mono-in" placeholder="Cole sua chave de 64 chars aqui…" autocomplete="off" spellcheck="false" style="font-size:12px"></div>
+    <button class="btn btn-o" id="btn-mk">🔑 Desbloquear com chave</button>
+  </div>
+  <div class="div-or">ou senha memorável</div>
+  <div class="card">
+    <div class="ig"><input type="password" id="inp-pwd" placeholder="Digite sua senha memorável" autocomplete="current-password"></div>
+    <button class="btn btn-g" id="btn-mk-pwd">🔑 Desbloquear com senha</button>
   </div>
   ${S.error?`<div class="err">${S.error}</div>`:''}
   <div style="text-align:center;padding:14px">
@@ -340,6 +366,32 @@ function bind(){
   on('btn-cpk',()=>{clip(S.genKey);toast('Chave copiada!','s');});
   on('btn-crt',async()=>{if(!S.genKey)return;S.vault={entries:[],users:[]};S.key=S.genKey;await persist();localStorage.setItem(LI,'1');S.screen='vault';S.genKey=null;render();toast('Vault criado na nuvem! 🎉','s');});
   on('btn-nfc-setup',async()=>{S.scanning=true;S.error=null;render();await initAutoUnlock();});
+
+  // Criar vault com senha memorável
+  on('btn-crt-pwd',async()=>{
+    const pwd=document.getElementById('inp-pwd-new')?.value||'';
+    const pwd2=document.getElementById('inp-pwd-new2')?.value||'';
+    if(pwd.length<8){S.error='Senha deve ter pelo menos 8 caracteres.';render();return;}
+    if(pwd!==pwd2){S.error='As senhas não coincidem.';render();return;}
+    toast('Derivando chave… aguarde','s');
+    const k=await deriveKey(pwd);
+    S.vault={entries:[],users:[]};S.key=k;
+    await persist();localStorage.setItem(LI,'1');
+    S.screen='vault';S.genKey=null;render();
+    toast('Vault criado com senha ✓','s');
+  });
+
+  // Desbloquear com senha memorável (setup)
+  on('btn-pwd-setup',async()=>{
+    const pwd=document.getElementById('inp-pwd-setup')?.value||'';
+    if(!pwd){S.error='Digite a senha.';render();return;}
+    try{
+      S.error=null;toast('Derivando chave… aguarde','s');
+      const k=await deriveKey(pwd);
+      await unlock(k);localStorage.setItem(LI,'1');S.screen='vault';render();
+      toast('Vault carregado ✓','s');
+    }catch(err){S.error='Senha incorreta ou vault não encontrado.';render();}
+  });
   on('btn-cloud-setup',async()=>{const k=($('inp-k-setup')?.value||'').trim();if(k.length!==64){S.error='A chave deve ter 64 caracteres hex.';render();return;}try{S.error=null;await unlock(k);localStorage.setItem(LI,'1');S.screen='vault';render();toast('Vault carregado ✓','s');}catch(err){S.error=err.message;render();}});
   on('btn-im-setup',()=>$('f-im-setup')?.click());
   $('f-im-setup')?.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{S._importBlob=ev.target.result.trim();S.setupImported=true;S.error=null;render();};r.readAsText(f);});
@@ -347,6 +399,16 @@ function bind(){
 
   // LOCKED
   on('btn-nfc',async()=>{S.scanning=true;S.error=null;render();await initAutoUnlock();});
+  on('btn-mk-pwd',async()=>{
+    const pwd=document.getElementById('inp-pwd')?.value||'';
+    if(!pwd){S.error='Digite a senha.';render();return;}
+    try{
+      stopNFCScan();toast('Derivando chave… aguarde','s');
+      const k=await deriveKey(pwd);
+      await unlock(k);S.error=null;S.screen='vault';render();
+      toast('Desbloqueado ✓','s');
+    }catch{S.error='Senha incorreta ou vault não encontrado.';render();}
+  });
   on('btn-mk',async()=>{const k=($('inp-k')?.value||'').trim();if(k.length!==64){S.error='Chave inválida.';render();return;}try{stopNFCScan();await unlock(k);S.error=null;S.screen='vault';render();toast('Desbloqueado ✓','s');}catch{S.error='Chave incorreta ou sem internet.';render();}});
   on('btn-rst',()=>{if(confirm('Sair? Os dados na nuvem continuam seguros.')){stopNFCScan();localStorage.removeItem(LI);S.screen='setup';S.error=null;render();}});
 
