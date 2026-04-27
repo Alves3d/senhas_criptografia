@@ -310,7 +310,19 @@ function rUsers(){
 
 function rExport(){
   const tg=S.vault?.telegram||{};
-  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">Backup & Sync</div><div class="tbar-side"></div></div><div style="padding:6px 0"><div class="card"><h3>☁️ Nuvem Ativa</h3><p>O vault está sincronizado via Firebase. Suas alterações são salvas automaticamente.</p></div><div class="card"><h3>📤 Exportar arquivo</h3><button class="btn btn-p" id="btn-dl">⬇️ Baixar vault.nfcv</button></div><div class="card"><h3>✈️ Telegram Backup</h3><p style="margin-bottom:10px">${tg.token&&tg.chatId?'Bot configurado.':'Configure o bot para habilitar.'}</p>${tg.token&&tg.chatId?`<button class="btn btn-g" id="btn-tg">📨 Enviar para Telegram</button><button class="btn-txt" id="btn-tg-cfg">⚙️ Reconfigurar bot</button>`:`<button class="btn btn-o" id="btn-tg-cfg">⚙️ Configurar bot Telegram</button>`}</div><div class="card"><h3>🔑 Chave Atual</h3><div class="key-box sm">${S.key}</div><button class="btn btn-o" id="btn-ck">📋 Copiar minha chave</button></div></div></div>`;}
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">Backup & Sync</div><div class="tbar-side"></div></div><div style="padding:6px 0">
+  <div class="card"><h3>☁️ Nuvem Ativa</h3><p>O vault está sincronizado via Firebase. Suas alterações são salvas automaticamente.</p></div>
+  <div class="card"><h3>🔑 Alterar chave de acesso</h3>
+    <p style="margin-bottom:10px">Troque para uma senha memorável ou gere uma nova chave. O vault será re-criptografado e salvo automaticamente.</p>
+    <div class="ig" style="margin-bottom:8px"><input type="password" id="chg-pwd" placeholder="Nova senha memorável (mín. 8 chars)" autocomplete="new-password"></div>
+    <div class="ig" style="margin-bottom:8px"><input type="password" id="chg-pwd2" placeholder="Confirme a nova senha" autocomplete="new-password"></div>
+    <button class="btn btn-g" id="btn-chg-pwd">✓ Alterar para senha memorável</button>
+    <button class="btn btn-o" id="btn-chg-rnd" style="margin-top:6px">⚡ Gerar nova chave aleatória</button>
+  </div>
+  <div class="card"><h3>📤 Exportar arquivo</h3><button class="btn btn-p" id="btn-dl">⬇️ Baixar vault.nfcv</button></div>
+  <div class="card"><h3>✈️ Telegram Backup</h3><p style="margin-bottom:10px">${tg.token&&tg.chatId?'Bot configurado.':'Configure o bot para habilitar.'}</p>${tg.token&&tg.chatId?`<button class="btn btn-g" id="btn-tg">📨 Enviar para Telegram</button><button class="btn-txt" id="btn-tg-cfg">⚙️ Reconfigurar bot</button>`:`<button class="btn btn-o" id="btn-tg-cfg">⚙️ Configurar bot Telegram</button>`}</div>
+  <div class="card"><h3>🔑 Chave Atual</h3><div class="key-box sm">${S.key}</div><button class="btn btn-o" id="btn-ck">📋 Copiar minha chave</button></div>
+</div></div>`;}
 
 function rTgConfig(){
   const tg=S.vault?.telegram||{};
@@ -432,6 +444,31 @@ function bind(){
 
   // EXPORT
   on('btn-dl',async()=>{const blob=await enc(S.vault,S.key);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([blob],{type:'text/plain'}));a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;a.click();});
+
+  // Alterar chave para senha memorável
+  on('btn-chg-pwd',async()=>{
+    const pwd=document.getElementById('chg-pwd')?.value||'';
+    const pwd2=document.getElementById('chg-pwd2')?.value||'';
+    if(pwd.length<8){toast('Senha deve ter pelo menos 8 caracteres','e');return;}
+    if(pwd!==pwd2){toast('As senhas não coincidem','e');return;}
+    if(!confirm('Alterar a chave de acesso? A tag NFC atual precisará ser regravada.'))return;
+    toast('Derivando chave… aguarde','s');
+    const novaKey=await deriveKey(pwd);
+    S.key=novaKey;
+    await persist();
+    toast('Chave alterada ✓ Atualize sua tag NFC se necessário.','s');
+    render();
+  });
+
+  // Gerar nova chave aleatória
+  on('btn-chg-rnd',async()=>{
+    if(!confirm('Gerar nova chave aleatória? A chave atual e a tag NFC perderão acesso.'))return;
+    const novaKey=await mkKey();
+    S.key=novaKey;
+    await persist();
+    toast('Nova chave gerada ✓ Atualize sua tag NFC.','s');
+    render();
+  });
   on('btn-tg-cfg',()=>{S.error=null;S.screen='tgconfig';render();});
   on('btn-tg',async()=>{const tg=S.vault?.telegram||{};try{const blob=await enc(S.vault,S.key);await sendTelegram(tg.token,tg.chatId,blob);toast('Enviado para o Telegram ✓','s');}catch(e){toast('Erro: '+e.message,'e');}});
   on('btn-ck',()=>{clip(S.key);toast('Chave copiada!','s');});
