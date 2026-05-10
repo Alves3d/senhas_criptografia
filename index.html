@@ -121,7 +121,6 @@ body{font-family:var(--sans);color:var(--text);min-height:100dvh;max-width:480px
 code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
 ::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
-/* ---- SEARCH BAR ---- */
 .sbar{padding:6px 14px 2px;position:sticky;top:57px;z-index:19;background:rgba(4,4,9,.92);backdrop-filter:blur(12px)}
 .sbar-inner{position:relative}
 .sbar-inner input{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;
@@ -147,43 +146,202 @@ const fbApp=initializeApp({apiKey:p1+p2+p3,authDomain:"cipherchat-8d3dd.firebase
   appId:"1:373800191486:web:8679aef24075ff9cb96caf"});
 const db=getDatabase(fbApp);
 
-async function vaultId(k){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(k));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);}
-async function fbRead(k){const id=await vaultId(k);const s=await get(child(ref(db),`vaults/${id}/data`));return s.exists()?s.val():null;}
-async function fbWrite(k,blob){const id=await vaultId(k);await set(ref(db,`vaults/${id}/data`),blob);}
+// ─── VAULT ID ────────────────────────────────────────────────────────────────
+async function vaultId(k){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(k));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);
+}
 
-// MUDANÇA 1: adicionado search:'' ao estado
-const S={screen:'loading',vault:null,key:null,editId:null,editUserId:null,error:null,scanning:false,showP:{},filter:'Todos',genKey:null,setupTab:'new',setupImported:false,search:''};
+// ─── FIREBASE READ / WRITE ────────────────────────────────────────────────────
+// [FIX] fbRead agora retorna {data, salt} — compatível com formato antigo
+async function fbRead(k){
+  const id=await vaultId(k);
+  const s=await get(child(ref(db),`vaults/${id}`));
+  if(!s.exists()) return null;
+  const val=s.val();
+  // formato novo: {data, salt}
+  if(val && typeof val==='object' && val.data) return val;
+  // formato legado (string direto): não deve existir mais, mas por segurança:
+  if(typeof val==='string') return {data:val, salt:''};
+  return null;
+}
+
+// [FIX] fbWrite salva {data, salt} em vez de só a string
+async function fbWrite(k,blob,saltHex){
+  const id=await vaultId(k);
+  await set(ref(db,`vaults/${id}`),{data:blob, salt:saltHex||''});
+}
+
+// ─── SALT POR SENHA (novo) ────────────────────────────────────────────────────
+// Guarda o salt associado à senha em um path separado,
+// permitindo derivar a chave correta no desbloqueio.
+async function pwdLookupId(senha){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('pwdlookup:'+senha));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,32);
+}
+async function fbSavePwdSalt(senha,saltHex){
+  const id=await pwdLookupId(senha);
+  await set(ref(db,`pwdSalts/${id}`),saltHex);
+}
+async function fbGetPwdSalt(senha){
+  const id=await pwdLookupId(senha);
+  const s=await get(child(ref(db),`pwdSalts/${id}`));
+  return s.exists()?s.val():null;
+}
+
+// ─── ESTADO ──────────────────────────────────────────────────────────────────
+// [FIX] adicionado salt:'' ao estado
+const S={
+  screen:'loading',vault:null,key:null,salt:'',
+  editId:null,editUserId:null,error:null,scanning:false,
+  showP:{},filter:'Todos',genKey:null,setupTab:'new',
+  setupImported:false,search:''
+};
 const LI='nfcv3_init';
-const BADGE_COLORS=[{bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},{bg:'rgba(251,191,36,.15)',color:'#fbbf24'},{bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},{bg:'rgba(248,113,113,.15)',color:'#f87171'},{bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},{bg:'rgba(52,211,153,.15)',color:'#6ee7b7'}];
-function badgeStyle(name){const u=S.vault?.users||[];const i=u.findIndex(x=>x.name===name);const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];return`background:${c.bg};color:${c.color}`;}
+const BADGE_COLORS=[
+  {bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},
+  {bg:'rgba(251,191,36,.15)',color:'#fbbf24'},
+  {bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},
+  {bg:'rgba(248,113,113,.15)',color:'#f87171'},
+  {bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},
+  {bg:'rgba(52,211,153,.15)',color:'#6ee7b7'}
+];
+function badgeStyle(name){
+  const u=S.vault?.users||[];
+  const i=u.findIndex(x=>x.name===name);
+  const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];
+  return`background:${c.bg};color:${c.color}`;
+}
 
+// ─── CRIPTO ──────────────────────────────────────────────────────────────────
 const h2b=h=>new Uint8Array(h.match(/.{2}/g).map(b=>parseInt(b,16)));
-async function mkKey(){return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(x=>x.toString(16).padStart(2,'0')).join('');}
-async function deriveKey(senha){const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(senha),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode('nfcvault-salt-v1'),iterations:200000},base,256);return Array.from(new Uint8Array(bits)).map(x=>x.toString(16).padStart(2,'0')).join('');}
-async function enc(data,hex){const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['encrypt']);const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(data)));const o=new Uint8Array(12+ct.byteLength);o.set(iv);o.set(new Uint8Array(ct),12);return btoa(String.fromCharCode(...o));}
-async function dec(b64,hex){const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['decrypt']);const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},k,b.slice(12));return JSON.parse(new TextDecoder().decode(p));}
 
+async function mkKey(){
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+// [FIX] deriveKey com salt dinâmico
+// - Se saltHex fornecido: usa esse salt (desbloqueio)
+// - Se não: gera salt aleatório (criação)
+// Retorna {keyHex, saltHex}
+async function deriveKey(senha, saltHex){
+  const saltBytes = saltHex
+    ? h2b(saltHex)
+    : crypto.getRandomValues(new Uint8Array(16));
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(senha),'PBKDF2',false,['deriveBits']);
+  const bits=await crypto.subtle.deriveBits(
+    {name:'PBKDF2',hash:'SHA-256',salt:saltBytes,iterations:200000},base,256);
+  const keyHex=Array.from(new Uint8Array(bits)).map(x=>x.toString(16).padStart(2,'0')).join('');
+  const saltHexOut=Array.from(saltBytes).map(x=>x.toString(16).padStart(2,'0')).join('');
+  return {keyHex, saltHex:saltHexOut};
+}
+
+async function enc(data,hex){
+  const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['encrypt']);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(JSON.stringify(data)));
+  const o=new Uint8Array(12+ct.byteLength);o.set(iv);o.set(new Uint8Array(ct),12);
+  return btoa(String.fromCharCode(...o));
+}
+
+async function dec(b64,hex){
+  const k=await crypto.subtle.importKey('raw',h2b(hex),'AES-GCM',false,['decrypt']);
+  const b=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b.slice(0,12)},k,b.slice(12));
+  return JSON.parse(new TextDecoder().decode(p));
+}
+
+// ─── NFC ─────────────────────────────────────────────────────────────────────
 let _nfcAbort=null;
-async function startNFCScan(onKey){if(!('NDEFReader' in window))return false;try{_nfcAbort=new AbortController();const reader=new NDEFReader();await reader.scan({signal:_nfcAbort.signal});reader.addEventListener('reading',e=>{for(const rec of e.message.records){if(rec.recordType==='text'){onKey(new TextDecoder(rec.encoding||'utf-8').decode(rec.data).trim());return;}}},{signal:_nfcAbort.signal});return true;}catch(e){return false;}}
+async function startNFCScan(onKey){
+  if(!('NDEFReader' in window))return false;
+  try{
+    _nfcAbort=new AbortController();
+    const reader=new NDEFReader();
+    await reader.scan({signal:_nfcAbort.signal});
+    reader.addEventListener('reading',e=>{
+      for(const rec of e.message.records){
+        if(rec.recordType==='text'){
+          onKey(new TextDecoder(rec.encoding||'utf-8').decode(rec.data).trim());
+          return;
+        }
+      }
+    },{signal:_nfcAbort.signal});
+    return true;
+  }catch(e){return false;}
+}
 function stopNFCScan(){if(_nfcAbort){_nfcAbort.abort();_nfcAbort=null;}S.scanning=false;}
-async function initAutoUnlock(){if(!('NDEFReader' in window))return;S.scanning=true;render();const ok=await startNFCScan(async key=>{stopNFCScan();try{await unlock(key);localStorage.setItem(LI,'1');S.screen='vault';render();toast('Vault desbloqueado ✓','s');}catch(err){S.error=err.message;S.scanning=false;render();}});if(!ok){S.scanning=false;render();}}
 
-async function persist(){await fbWrite(S.key,await enc(S.vault,S.key));}
-async function unlock(hex){const blob=await fbRead(hex);if(!blob)throw new Error('Vault não encontrado na nuvem.');S.vault=await dec(blob,hex);if(!S.vault.users)S.vault.users=[];S.key=hex;}
-const uid=()=>typeof crypto.randomUUID==='function'?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
+async function initAutoUnlock(){
+  if(!('NDEFReader' in window))return;
+  S.scanning=true;render();
+  const ok=await startNFCScan(async key=>{
+    stopNFCScan();
+    try{
+      await unlock(key);
+      localStorage.setItem(LI,'1');S.screen='vault';render();
+      toast('Vault desbloqueado ✓','s');
+    }catch(err){S.error=err.message;S.scanning=false;render();}
+  });
+  if(!ok){S.scanning=false;render();}
+}
+
+// ─── PERSIST / UNLOCK ────────────────────────────────────────────────────────
+// [FIX] persist passa S.salt
+async function persist(){
+  await fbWrite(S.key, await enc(S.vault,S.key), S.salt||'');
+}
+
+// [FIX] unlock lê record.data e armazena record.salt em S.salt
+async function unlock(hex){
+  const record=await fbRead(hex);
+  if(!record) throw new Error('Vault não encontrado na nuvem.');
+  S.vault=await dec(record.data,hex);
+  if(!S.vault.users) S.vault.users=[];
+  S.key=hex;
+  S.salt=record.salt||'';
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+const uid=()=>typeof crypto.randomUUID==='function'
+  ?crypto.randomUUID()
+  :Date.now().toString(36)+Math.random().toString(36).slice(2);
+
 function addE(e){S.vault.entries.push({...e,id:uid(),ts:Date.now()});}
 function updE(id,e){const i=S.vault.entries.findIndex(x=>x.id===id);if(i>=0)S.vault.entries[i]={...S.vault.entries[i],...e};}
 function delE(id){S.vault.entries=S.vault.entries.filter(e=>e.id!==id);}
 
-function clip(t){navigator.clipboard?.writeText(t).catch(()=>{const a=Object.assign(document.createElement('textarea'),{value:t});document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();});}
-function toast(msg,type='s'){document.querySelectorAll('.toast').forEach(x=>x.remove());const el=document.createElement('div');el.className=`toast t${type}`;el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el?.remove(),2600);}
-function genPwd(n=16){const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';const a=new Uint8Array(n);crypto.getRandomValues(a);return Array.from(a).map(b=>c[b%c.length]).join('');}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function clip(t){
+  navigator.clipboard?.writeText(t).catch(()=>{
+    const a=Object.assign(document.createElement('textarea'),{value:t});
+    document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();
+  });
+}
+function toast(msg,type='s'){
+  document.querySelectorAll('.toast').forEach(x=>x.remove());
+  const el=document.createElement('div');
+  el.className=`toast t${type}`;el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el?.remove(),2600);
+}
+function genPwd(n=16){
+  const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+  const a=new Uint8Array(n);crypto.getRandomValues(a);
+  return Array.from(a).map(b=>c[b%c.length]).join('');
+}
+function esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 function init(){S.screen=localStorage.getItem(LI)?'locked':'setup';render();if(S.screen==='locked')initAutoUnlock();}
 
+// ─── RENDER ──────────────────────────────────────────────────────────────────
 function render(){
-  document.getElementById('app').innerHTML={loading:rLoad,setup:rSetup,locked:rLocked,vault:rVault,add:rAdd,export:rExport,users:rUsers,tgconfig:rTgConfig}[S.screen]?.()??rLoad();
+  document.getElementById('app').innerHTML={
+    loading:rLoad,setup:rSetup,locked:rLocked,vault:rVault,
+    add:rAdd,export:rExport,users:rUsers,tgconfig:rTgConfig
+  }[S.screen]?.()??rLoad();
   bind();
 }
 
@@ -282,7 +440,6 @@ function rLocked(){
   </div>
 </div>`;}
 
-// MUDANÇA 2: rVault com barra de pesquisa — filtra sem chamar render()
 function rVault(){
   const users=S.vault.users||[];
   const q=(S.search||'').toLowerCase();
@@ -328,8 +485,18 @@ function rTgConfig(){
   const tg=S.vault?.telegram||{};
   return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">✈️ Telegram Bot</div><div class="tbar-side"></div></div><div style="padding:14px"><div class="ig" style="margin-bottom:12px"><label>Token do Bot</label><input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}"></div><div class="ig" style="margin-bottom:14px"><label>Chat ID</label><input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}"></div><button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}</div></div>`;}
 
-async function sendTelegram(token,chatId,blob){const date=new Date().toISOString().slice(0,10);const fd=new FormData();fd.append('chat_id',chatId);fd.append('caption',`🔐 NFC Vault — backup ${date}`);fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});const j=await r.json();if(!j.ok)throw new Error(j.description||'Erro ao enviar');}
+async function sendTelegram(token,chatId,blob){
+  const date=new Date().toISOString().slice(0,10);
+  const fd=new FormData();
+  fd.append('chat_id',chatId);
+  fd.append('caption',`🔐 NFC Vault — backup ${date}`);
+  fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));
+  const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.description||'Erro ao enviar');
+}
 
+// ─── BIND ─────────────────────────────────────────────────────────────────────
 function bind(){
   const $=id=>document.getElementById(id);
   const on=(id,fn)=>$(id)?.addEventListener('click',fn);
@@ -337,115 +504,205 @@ function bind(){
   document.querySelectorAll('[data-f]').forEach(b=>b.addEventListener('click',()=>{S.filter=b.dataset.f;S.search='';render();}));
 
   document.querySelectorAll('.bey').forEach(b=>b.addEventListener('click',()=>{
-    if(b.dataset.id==='form'){const inp=$('f-pw');if(!inp)return;const showing=inp.type==='text';inp.type=showing?'password':'text';b.textContent=showing?'👁️':'🙈';S.showP.form=!showing;}
-    else{S.showP[b.dataset.id]=!S.showP[b.dataset.id];render();}
+    if(b.dataset.id==='form'){
+      const inp=$('f-pw');if(!inp)return;
+      const showing=inp.type==='text';inp.type=showing?'password':'text';
+      b.textContent=showing?'👁️':'🙈';S.showP.form=!showing;
+    }else{S.showP[b.dataset.id]=!S.showP[b.dataset.id];render();}
   }));
 
   document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
-  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');render();}));
-  document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',e=>{if(e.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
+  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async e=>{
+    e.stopPropagation();
+    if(!confirm('Excluir esta senha?'))return;
+    delE(b.dataset.id);await persist();toast('Senha removida','s');render();
+  }));
+  document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',e=>{
+    if(e.target.closest('.eacts'))return;
+    S.editId=c.dataset.id;S.screen='add';render();
+  }));
 
-  // MUDANÇA 3: search — atualiza S.search e chama render() apenas no blur/Enter
-  // No input, só filtra o DOM sem recriar a tela
+  // Search
   const srch=$('srch');
   if(srch){
     srch.addEventListener('input',e=>{
       S.search=e.target.value;
       const q=S.search.toLowerCase();
-      const users=S.vault?.users||[];
       let list=S.filter==='Todos'?S.vault.entries:S.vault.entries.filter(en=>en.owner===S.filter);
       if(q) list=list.filter(en=>(en.label||'').toLowerCase().includes(q)||(en.username||'').toLowerCase().includes(q));
       const elist=document.querySelector('.elist');
-      if(!elist) return;
+      if(!elist)return;
       if(list.length===0){elist.innerHTML=`<div class="empty">${q?'Nenhum resultado encontrado.':'Nenhuma senha aqui.'}</div>`;return;}
       elist.innerHTML=list.map(en=>{const shown=S.showP[en.id];return`<div class="ecard" data-id="${en.id}"><div class="ehdr"><div class="elabel">${esc(en.label)}</div><div class="ebadge" style="${badgeStyle(en.owner)}">${esc(en.owner)}</div></div>${en.username?`<div class="euser">${esc(en.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(en.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${en.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(en.password)}">📋</button><button class="ibtn-sm bdl" data-id="${en.id}">🗑️</button></div></div></div>`;}).join('');
-      // rebind botões da lista
       document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
       document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async ev=>{ev.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');S.search='';render();}));
       document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',ev=>{if(ev.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
-      // botão X
       const sx=document.getElementById('btn-sx');
-      if(!sx&&S.search){const b=document.createElement('button');b.className='sbar-x';b.id='btn-sx';b.textContent='✕';b.addEventListener('click',()=>{S.search='';srch.value='';S.search='';render();});document.querySelector('.sbar-inner')?.appendChild(b);}
+      if(!sx&&S.search){const b=document.createElement('button');b.className='sbar-x';b.id='btn-sx';b.textContent='✕';b.addEventListener('click',()=>{S.search='';srch.value='';render();});document.querySelector('.sbar-inner')?.appendChild(b);}
       else if(sx&&!S.search)sx.remove();
     });
   }
   on('btn-sx',()=>{S.search='';render();});
 
-  // SETUP
+  // ── SETUP ──────────────────────────────────────────────────────────────────
   on('btn-tab-new',()=>{S.setupTab='new';S.setupImported=false;S.error=null;stopNFCScan();render();});
   on('btn-tab-imp',()=>{S.setupTab='imp';S.error=null;render();initAutoUnlock();});
   on('btn-gen',async()=>{S.genKey=await mkKey();render();});
   on('btn-cpk',()=>{clip(S.genKey);toast('Chave copiada!','s');});
-  on('btn-crt',async()=>{if(!S.genKey)return;S.vault={entries:[],users:[]};S.key=S.genKey;await persist();localStorage.setItem(LI,'1');S.screen='vault';S.genKey=null;render();toast('Vault criado na nuvem! 🎉','s');});
+
+  // Criar vault com chave aleatória (NFC)
+  on('btn-crt',async()=>{
+    if(!S.genKey)return;
+    S.vault={entries:[],users:[]};S.key=S.genKey;S.salt='';
+    await persist();localStorage.setItem(LI,'1');
+    S.screen='vault';S.genKey=null;render();
+    toast('Vault criado na nuvem! 🎉','s');
+  });
+
   on('btn-nfc-setup',async()=>{S.scanning=true;S.error=null;render();await initAutoUnlock();});
 
-  // Criar vault com senha memorável
+  // [FIX] Criar vault com senha memorável — salt dinâmico + salvo no Firebase
   on('btn-crt-pwd',async()=>{
     const pwd=document.getElementById('inp-pwd-new')?.value||'';
     const pwd2=document.getElementById('inp-pwd-new2')?.value||'';
     if(pwd.length<8){S.error='Senha deve ter pelo menos 8 caracteres.';render();return;}
     if(pwd!==pwd2){S.error='As senhas não coincidem.';render();return;}
     toast('Derivando chave… aguarde','s');
-    const k=await deriveKey(pwd);
+    const {keyHex:k, saltHex:salt}=await deriveKey(pwd);
+    S.salt=salt;
     S.vault={entries:[],users:[]};S.key=k;
-    await persist();localStorage.setItem(LI,'1');
+    await fbSavePwdSalt(pwd, salt);
+    await persist();
+    localStorage.setItem(LI,'1');
     S.screen='vault';S.genKey=null;render();
     toast('Vault criado com senha ✓','s');
   });
 
-  // Desbloquear com senha memorável (setup)
+  // [FIX] Desbloquear com senha memorável (tela setup) — busca salt no Firebase
   on('btn-pwd-setup',async()=>{
     const pwd=document.getElementById('inp-pwd-setup')?.value||'';
     if(!pwd){S.error='Digite a senha.';render();return;}
     try{
       S.error=null;toast('Derivando chave… aguarde','s');
-      const k=await deriveKey(pwd);
-      await unlock(k);localStorage.setItem(LI,'1');S.screen='vault';render();
+      const savedSalt=await fbGetPwdSalt(pwd);
+      if(!savedSalt) throw new Error('Senha incorreta ou vault não encontrado.');
+      const {keyHex:k}=await deriveKey(pwd, savedSalt);
+      await unlock(k);
+      localStorage.setItem(LI,'1');S.screen='vault';render();
       toast('Vault carregado ✓','s');
-    }catch(err){S.error='Senha incorreta ou vault não encontrado.';render();}
+    }catch(err){S.error=err.message||'Senha incorreta ou vault não encontrado.';render();}
   });
-  on('btn-cloud-setup',async()=>{const k=($('inp-k-setup')?.value||'').trim();if(k.length!==64){S.error='A chave deve ter 64 caracteres hex.';render();return;}try{S.error=null;await unlock(k);localStorage.setItem(LI,'1');S.screen='vault';render();toast('Vault carregado ✓','s');}catch(err){S.error=err.message;render();}});
-  on('btn-im-setup',()=>$('f-im-setup')?.click());
-  $('f-im-setup')?.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{S._importBlob=ev.target.result.trim();S.setupImported=true;S.error=null;render();};r.readAsText(f);});
-  on('btn-mk-file-setup',async()=>{const k=($('inp-k-file-setup')?.value||'').trim();if(k.length!==64){S.error='Chave incorreta.';render();return;}try{S.vault=await dec(S._importBlob,k);S.key=k;await persist();localStorage.setItem(LI,'1');S.screen='vault';render();toast('Backup importado!','s');}catch{S.error='Chave incorreta para este arquivo.';render();}});
 
-  // LOCKED
+  on('btn-cloud-setup',async()=>{
+    const k=($('inp-k-setup')?.value||'').trim();
+    if(k.length!==64){S.error='A chave deve ter 64 caracteres hex.';render();return;}
+    try{S.error=null;await unlock(k);localStorage.setItem(LI,'1');S.screen='vault';render();toast('Vault carregado ✓','s');}
+    catch(err){S.error=err.message;render();}
+  });
+
+  on('btn-im-setup',()=>$('f-im-setup')?.click());
+  $('f-im-setup')?.addEventListener('change',e=>{
+    const f=e.target.files[0];if(!f)return;
+    const r=new FileReader();
+    r.onload=ev=>{S._importBlob=ev.target.result.trim();S.setupImported=true;S.error=null;render();};
+    r.readAsText(f);
+  });
+  on('btn-mk-file-setup',async()=>{
+    const k=($('inp-k-file-setup')?.value||'').trim();
+    if(k.length!==64){S.error='Chave incorreta.';render();return;}
+    try{
+      S.vault=await dec(S._importBlob,k);S.key=k;S.salt='';
+      await persist();localStorage.setItem(LI,'1');S.screen='vault';render();
+      toast('Backup importado!','s');
+    }catch{S.error='Chave incorreta para este arquivo.';render();}
+  });
+
+  // ── LOCKED ─────────────────────────────────────────────────────────────────
   on('btn-nfc',async()=>{S.scanning=true;S.error=null;render();await initAutoUnlock();});
+
+  // [FIX] Desbloquear com senha memorável (tela locked) — busca salt no Firebase
   on('btn-mk-pwd',async()=>{
     const pwd=document.getElementById('inp-pwd')?.value||'';
     if(!pwd){S.error='Digite a senha.';render();return;}
     try{
       stopNFCScan();toast('Derivando chave… aguarde','s');
-      const k=await deriveKey(pwd);
-      await unlock(k);S.error=null;S.screen='vault';render();
+      const savedSalt=await fbGetPwdSalt(pwd);
+      if(!savedSalt) throw new Error('Senha incorreta ou vault não encontrado.');
+      const {keyHex:k}=await deriveKey(pwd, savedSalt);
+      await unlock(k);
+      S.error=null;S.screen='vault';render();
       toast('Desbloqueado ✓','s');
-    }catch{S.error='Senha incorreta ou vault não encontrado.';render();}
+    }catch(e){S.error=e.message||'Senha incorreta ou vault não encontrado.';render();}
   });
-  on('btn-mk',async()=>{const k=($('inp-k')?.value||'').trim();if(k.length!==64){S.error='Chave inválida.';render();return;}try{stopNFCScan();await unlock(k);S.error=null;S.screen='vault';render();toast('Desbloqueado ✓','s');}catch{S.error='Chave incorreta ou sem internet.';render();}});
-  on('btn-rst',()=>{if(confirm('Sair? Os dados na nuvem continuam seguros.')){stopNFCScan();localStorage.removeItem(LI);S.screen='setup';S.error=null;render();}});
 
-  // VAULT
+  on('btn-mk',async()=>{
+    const k=($('inp-k')?.value||'').trim();
+    if(k.length!==64){S.error='Chave inválida.';render();return;}
+    try{stopNFCScan();await unlock(k);S.error=null;S.screen='vault';render();toast('Desbloqueado ✓','s');}
+    catch{S.error='Chave incorreta ou sem internet.';render();}
+  });
+
+  on('btn-rst',()=>{
+    if(confirm('Sair? Os dados na nuvem continuam seguros.')){
+      stopNFCScan();localStorage.removeItem(LI);S.screen='setup';S.error=null;render();
+    }
+  });
+
+  // ── VAULT ──────────────────────────────────────────────────────────────────
   on('btn-add',()=>{S.editId=null;S.screen='add';render();});
-  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.search='';S.screen='locked';render();initAutoUnlock();});
+  on('btn-lk',()=>{stopNFCScan();S.vault=null;S.key=null;S.salt='';S.search='';S.screen='locked';render();initAutoUnlock();});
   on('btn-exp',()=>{S.screen='export';render();});
   on('btn-usr',()=>{S.editUserId=null;S.screen='users';render();});
 
-  // USERS
+  // ── USERS ──────────────────────────────────────────────────────────────────
   document.querySelectorAll('.bedu').forEach(b=>b.addEventListener('click',()=>{S.editUserId=b.dataset.uid;render();}));
-  document.querySelectorAll('.bdlu').forEach(b=>b.addEventListener('click',async()=>{const u=S.vault.users.find(x=>x.id===b.dataset.uid);if(!u||!confirm(`Remover "${u.name}"?`))return;S.vault.users=S.vault.users.filter(x=>x.id!==b.dataset.uid);await persist();render();}));
-  on('btn-svu',async()=>{const name=(document.getElementById('f-un')?.value||'').trim();if(!name)return;const users=S.vault.users||[];if(S.editUserId){const i=users.findIndex(x=>x.id===S.editUserId);if(i>=0)users[i].name=name;S.editUserId=null;}else{if(!S.vault.users)S.vault.users=[];S.vault.users.push({id:uid(),name});}await persist();render();});
+  document.querySelectorAll('.bdlu').forEach(b=>b.addEventListener('click',async()=>{
+    const u=S.vault.users.find(x=>x.id===b.dataset.uid);
+    if(!u||!confirm(`Remover "${u.name}"?`))return;
+    S.vault.users=S.vault.users.filter(x=>x.id!==b.dataset.uid);
+    await persist();render();
+  }));
+  on('btn-svu',async()=>{
+    const name=(document.getElementById('f-un')?.value||'').trim();if(!name)return;
+    const users=S.vault.users||[];
+    if(S.editUserId){const i=users.findIndex(x=>x.id===S.editUserId);if(i>=0)users[i].name=name;S.editUserId=null;}
+    else{if(!S.vault.users)S.vault.users=[];S.vault.users.push({id:uid(),name});}
+    await persist();render();
+  });
   on('btn-cncu',()=>{S.editUserId=null;render();});
 
-  // ADD/EDIT
+  // ── ADD/EDIT ───────────────────────────────────────────────────────────────
   on('btn-bk',()=>{S.editId=null;S.editUserId=null;S.showP.form=false;S.screen=S.vault?'vault':'locked';render();});
-  on('btn-gpw',()=>{const pw=genPwd();const inp=$('f-pw');if(inp){inp.value=pw;inp.type='text';S.showP.form=true;const eye=document.querySelector('.bey[data-id="form"]');if(eye)eye.textContent='🙈';}toast('Senha gerada!','s');});
-  on('btn-sv',async()=>{const lb=($('f-lb')?.value||'').trim(),pw=($('f-pw')?.value||'').trim();if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}const entry={label:lb,username:($('f-us')?.value||'').trim(),password:pw,url:($('f-ur')?.value||'').trim(),owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),notes:($('f-nt')?.value||'').trim()};if(!!S.editId)updE(S.editId,entry);else addE(entry);await persist();S.editId=null;S.screen='vault';render();toast(!!S.editId?'Senha atualizada ✓':'Senha adicionada 🎉','s');});
-  on('btn-de',async()=>{if(!confirm('Excluir permanentemente?'))return;delE(S.editId);await persist();S.editId=null;S.screen='vault';render();});
+  on('btn-gpw',()=>{
+    const pw=genPwd();const inp=$('f-pw');
+    if(inp){inp.value=pw;inp.type='text';S.showP.form=true;const eye=document.querySelector('.bey[data-id="form"]');if(eye)eye.textContent='🙈';}
+    toast('Senha gerada!','s');
+  });
+  on('btn-sv',async()=>{
+    const lb=($('f-lb')?.value||'').trim(),pw=($('f-pw')?.value||'').trim();
+    if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}
+    const entry={label:lb,username:($('f-us')?.value||'').trim(),password:pw,
+      url:($('f-ur')?.value||'').trim(),owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),
+      notes:($('f-nt')?.value||'').trim()};
+    if(!!S.editId)updE(S.editId,entry);else addE(entry);
+    await persist();S.editId=null;S.screen='vault';render();
+    toast(!!S.editId?'Senha atualizada ✓':'Senha adicionada 🎉','s');
+  });
+  on('btn-de',async()=>{
+    if(!confirm('Excluir permanentemente?'))return;
+    delE(S.editId);await persist();S.editId=null;S.screen='vault';render();
+  });
 
-  // EXPORT
-  on('btn-dl',async()=>{const blob=await enc(S.vault,S.key);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([blob],{type:'text/plain'}));a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;a.click();});
+  // ── EXPORT ─────────────────────────────────────────────────────────────────
+  on('btn-dl',async()=>{
+    const blob=await enc(S.vault,S.key);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([blob],{type:'text/plain'}));
+    a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;
+    a.click();
+  });
 
-  // Alterar chave para senha memorável
+  // [FIX] Alterar chave para senha memorável — salt dinâmico + salvo no Firebase
   on('btn-chg-pwd',async()=>{
     const pwd=document.getElementById('chg-pwd')?.value||'';
     const pwd2=document.getElementById('chg-pwd2')?.value||'';
@@ -453,8 +710,9 @@ function bind(){
     if(pwd!==pwd2){toast('As senhas não coincidem','e');return;}
     if(!confirm('Alterar a chave de acesso? A tag NFC atual precisará ser regravada.'))return;
     toast('Derivando chave… aguarde','s');
-    const novaKey=await deriveKey(pwd);
-    S.key=novaKey;
+    const {keyHex:novaKey, saltHex:salt}=await deriveKey(pwd);
+    S.salt=salt;S.key=novaKey;
+    await fbSavePwdSalt(pwd, salt);
     await persist();
     toast('Chave alterada ✓ Atualize sua tag NFC se necessário.','s');
     render();
@@ -464,15 +722,24 @@ function bind(){
   on('btn-chg-rnd',async()=>{
     if(!confirm('Gerar nova chave aleatória? A chave atual e a tag NFC perderão acesso.'))return;
     const novaKey=await mkKey();
-    S.key=novaKey;
+    S.key=novaKey;S.salt='';
     await persist();
     toast('Nova chave gerada ✓ Atualize sua tag NFC.','s');
     render();
   });
+
   on('btn-tg-cfg',()=>{S.error=null;S.screen='tgconfig';render();});
-  on('btn-tg',async()=>{const tg=S.vault?.telegram||{};try{const blob=await enc(S.vault,S.key);await sendTelegram(tg.token,tg.chatId,blob);toast('Enviado para o Telegram ✓','s');}catch(e){toast('Erro: '+e.message,'e');}});
+  on('btn-tg',async()=>{
+    const tg=S.vault?.telegram||{};
+    try{const blob=await enc(S.vault,S.key);await sendTelegram(tg.token,tg.chatId,blob);toast('Enviado para o Telegram ✓','s');}
+    catch(e){toast('Erro: '+e.message,'e');}
+  });
   on('btn-ck',()=>{clip(S.key);toast('Chave copiada!','s');});
-  on('btn-tg-save',async()=>{const token=($('tg-token')?.value||'').trim(),chatId=($('tg-chatid')?.value||'').trim();if(!token||!chatId)return;S.vault.telegram={token,chatId};await persist();S.screen='export';render();});
+  on('btn-tg-save',async()=>{
+    const token=($('tg-token')?.value||'').trim(),chatId=($('tg-chatid')?.value||'').trim();
+    if(!token||!chatId)return;
+    S.vault.telegram={token,chatId};await persist();S.screen='export';render();
+  });
 }
 
 init();
