@@ -426,7 +426,7 @@ function bind(){
   }));
 
   document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
-  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');render();}));
+  document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async e=>{e.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();render();setTimeout(()=>toast('Senha removida','s'),80);}));
   document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',e=>{if(e.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
 
   // MUDANÇA 3: search — atualiza S.search e chama render() apenas no blur/Enter
@@ -523,8 +523,8 @@ function bind(){
   // ADD/EDIT
   on('btn-bk',()=>{S.editId=null;S.editUserId=null;S.showP.form=false;S.screen=S.vault?'vault':'locked';render();});
   on('btn-gpw',()=>{const pw=genPwd();const inp=$('f-pw');if(inp){inp.value=pw;inp.type='text';S.showP.form=true;const eye=document.querySelector('.bey[data-id="form"]');if(eye)eye.textContent='🙈';}toast('Senha gerada!','s');});
-  on('btn-sv',async()=>{const lb=($('f-lb')?.value||'').trim(),pw=($('f-pw')?.value||'').trim();if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}const entry={label:lb,username:($('f-us')?.value||'').trim(),password:pw,url:safeUrl($('f-ur')?.value||''),owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),notes:($('f-nt')?.value||'').trim()};if(!!S.editId)updE(S.editId,entry);else addE(entry);await persist();S.editId=null;S.screen='vault';render();toast(!!S.editId?'Senha atualizada ✓':'Senha adicionada 🎉','s');});
-  on('btn-de',async()=>{if(!confirm('Excluir permanentemente?'))return;delE(S.editId);await persist();S.editId=null;S.screen='vault';render();});
+  on('btn-sv',async()=>{const lb=($('f-lb')?.value||'').trim(),pw=($('f-pw')?.value||'').trim();if(!lb||!pw){toast('Preencha os campos obrigatórios','e');return;}const entry={label:lb,username:($('f-us')?.value||'').trim(),password:pw,url:safeUrl($('f-ur')?.value||''),owner:$('f-ow')?.value||(S.vault.users[0]?.name||''),notes:($('f-nt')?.value||'').trim()};const wasEdit=!!S.editId;if(wasEdit)updE(S.editId,entry);else addE(entry);await persist();S.editId=null;S.screen='vault';render();setTimeout(()=>toast(wasEdit?'Senha atualizada ✓':'Senha adicionada 🎉','s'),80);});
+  on('btn-de',async()=>{if(!confirm('Excluir permanentemente?'))return;delE(S.editId);await persist();S.editId=null;S.screen='vault';render();setTimeout(()=>toast('Senha removida','s'),80);});
 
   // EXPORT
   on('btn-dl',async()=>{const blob=await enc(S.vault,S.key);const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([blob],{type:'text/plain'}));a.download=`vault_${new Date().toISOString().slice(0,10)}.nfcv`;a.click();});
