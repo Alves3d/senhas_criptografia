@@ -136,6 +136,7 @@ code{font-family:var(--mono);color:var(--accent-h);font-size:12px}
 <body>
 <div id="app"></div>
 <script>
+(function(){
 // ================================================================
 //  PROXY  (Cloudflare Worker — credenciais nunca expostas no browser)
 // ================================================================
@@ -174,27 +175,43 @@ const LI='nfcv3_init';
 const LFAIL='nfcv3_fails';
 
 // Rate limiting: bloqueia tentativas após N falhas
-function getFails(){try{return JSON.parse(localStorage.getItem(LFAIL)||'{"n":0,"until":0}');}catch{return {n:0,until:0};}}
+// Contador duplo: localStorage (persistente) + memória (não bypassável via console)
+let _sessionFails=0;
+function getFails(){
+  try{return JSON.parse(localStorage.getItem(LFAIL)||'{"n":0,"until":0}');}
+  catch{return {n:0,until:0};}
+}
 function setFails(o){localStorage.setItem(LFAIL,JSON.stringify(o));}
 function clearFails(){localStorage.removeItem(LFAIL);}
 function checkLockout(){
+  // Verifica tanto localStorage quanto contador de sessão
+  if(_sessionFails>=3){
+    const f=getFails();
+    if(f.until && Date.now()<f.until){
+      const s=Math.ceil((f.until-Date.now())/1000);
+      throw new Error(`Muitas tentativas. Aguarde ${s}s antes de tentar novamente.`);
+    }
+  }
   const f=getFails();
-  if(f.until && Date.now() < f.until){
+  if(f.until && Date.now()<f.until){
     const s=Math.ceil((f.until-Date.now())/1000);
     throw new Error(`Muitas tentativas. Aguarde ${s}s antes de tentar novamente.`);
   }
   return f;
 }
 function recordFail(){
+  _sessionFails++;
   const f=getFails();
   f.n=(f.n||0)+1;
-  // Após 3 tentativas: 30s. Após 5: 5min. Após 10: 1h.
-  if(f.n>=10) f.until=Date.now()+3600000;
-  else if(f.n>=5) f.until=Date.now()+300000;
-  else if(f.n>=3) f.until=Date.now()+30000;
+  if(_sessionFails>=3||f.n>=3){
+    // Lockout progressivo — combina sessão + localStorage
+    if(f.n>=10) f.until=Date.now()+3600000;
+    else if(f.n>=5) f.until=Date.now()+300000;
+    else f.until=Date.now()+30000;
+  }
   setFails(f);
 }
-function recordSuccess(){clearFails();}
+function recordSuccess(){_sessionFails=0;clearFails();}
 const BADGE_COLORS=[{bg:'rgba(91,94,247,.18)',color:'#a5a8ff'},{bg:'rgba(251,191,36,.15)',color:'#fbbf24'},{bg:'rgba(45,212,191,.15)',color:'#2dd4bf'},{bg:'rgba(248,113,113,.15)',color:'#f87171'},{bg:'rgba(167,139,250,.18)',color:'#c4b5fd'},{bg:'rgba(52,211,153,.15)',color:'#6ee7b7'}];
 function badgeStyle(name){const u=S.vault?.users||[];const i=u.findIndex(x=>x.name===name);const c=BADGE_COLORS[(i<0?0:i)%BADGE_COLORS.length];return`background:${c.bg};color:${c.color}`;}
 
@@ -342,7 +359,7 @@ function rSetup(){
       ${S.setupImported?`<div style="margin-top:12px"><p style="color:var(--green);font-size:13px;margin-bottom:8px">✓ Arquivo carregado! Cole a chave:</p><div class="ig"><input type="text" id="inp-k-file-setup" class="mono-in" placeholder="Chave do arquivo..." style="font-size:12px"></div><button class="btn btn-g" id="btn-mk-file-setup" style="margin-top:6px">🔓 Abrir arquivo</button></div>`:''}
     </div>
   </div>`}
-  ${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}
+  ${S.error?`<div class="err" style="margin-top:10px">${esc(S.error||"")}</div>`:''}
 </div>`;}
 
 function rLocked(){
@@ -366,7 +383,7 @@ function rLocked(){
     <div class="ig"><input type="password" id="inp-pwd" placeholder="Digite sua senha memorável" autocomplete="current-password"></div>
     <button class="btn btn-g" id="btn-mk-pwd">🔑 Desbloquear com senha</button>
   </div>
-  ${S.error?`<div class="err">${S.error}</div>`:''}
+  ${S.error?`<div class="err">${esc(S.error||"")}</div>`:''}
   <div style="text-align:center;padding:14px">
     <button class="btn-txt" id="btn-rst">Reconfigurar vault (Sair)</button>
   </div>
@@ -380,7 +397,7 @@ function rVault(){
   if(q) list=list.filter(e=>(e.label||'').toLowerCase().includes(q)||(e.username||'').toLowerCase().includes(q));
   const cards=list.length===0
     ?`<div class="empty">${q?'Nenhum resultado encontrado.':'Nenhuma senha aqui.<br>Toque <strong style="color:var(--accent-h)">+</strong> para adicionar.'}</div>`
-    :list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(e.password)}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
+    :list.map(e=>{const shown=S.showP[e.id];return`<div class="ecard" data-id="${e.id}"><div class="ehdr"><div class="elabel">${esc(e.label)}</div><div class="ebadge" style="${badgeStyle(e.owner)}">${esc(e.owner)}</div></div>${e.username?`<div class="euser">${esc(e.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(e.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${e.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-id="${e.id}">📋</button><button class="ibtn-sm bdl" data-id="${e.id}">🗑️</button></div></div></div>`;}).join('');
   return`<div class="screen">
   <div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-usr">👥</button></div><div class="tbar-title">🔐 Vault</div><div class="tbar-side"><button class="ibtn" id="btn-exp">⬇️</button><button class="ibtn" id="btn-lk">🔒</button></div></div>
   <div class="sbar"><div class="sbar-inner"><span class="sbar-ico">🔍</span><input id="srch" type="search" placeholder="Pesquisar…" value="${esc(S.search)}" autocomplete="off" spellcheck="false">${S.search?`<button class="sbar-x" id="btn-sx">✕</button>`:''}</div></div>
@@ -416,7 +433,7 @@ function rExport(){
 
 function rTgConfig(){
   const tg=S.vault?.telegram||{};
-  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">✈️ Telegram Bot</div><div class="tbar-side"></div></div><div style="padding:14px"><div class="ig" style="margin-bottom:12px"><label>Token do Bot</label><input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}"></div><div class="ig" style="margin-bottom:14px"><label>Chat ID</label><input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}"></div><button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>${S.error?`<div class="err" style="margin-top:10px">${S.error}</div>`:''}</div></div>`;}
+  return`<div class="screen"><div class="tbar"><div class="tbar-side"><button class="ibtn" id="btn-bk">←</button></div><div class="tbar-title">✈️ Telegram Bot</div><div class="tbar-side"></div></div><div style="padding:14px"><div class="ig" style="margin-bottom:12px"><label>Token do Bot</label><input type="text" id="tg-token" class="mono-in" placeholder="1234567890:AAHxxx…" value="${esc(tg.token||'')}"></div><div class="ig" style="margin-bottom:14px"><label>Chat ID</label><input type="text" id="tg-chatid" class="mono-in" placeholder="986603726" value="${esc(tg.chatId||'')}"></div><button class="btn btn-p" id="btn-tg-save">✓ Salvar configuração</button>${S.error?`<div class="err" style="margin-top:10px">${esc(S.error||"")}</div>`:''}</div></div>`;}
 
 async function sendTelegram(token,chatId,blob){const date=new Date().toISOString().slice(0,10);const fd=new FormData();fd.append('chat_id',chatId);fd.append('caption',`🔐 NFC Vault — backup ${date}`);fd.append('document',new File([blob],`vault_${date}.nfcv`,{type:'text/plain'}));const r=await fetch(`https://api.telegram.org/bot${token}/sendDocument`,{method:'POST',body:fd});const j=await r.json();if(!j.ok)throw new Error(j.description||'Erro ao enviar');}
 
@@ -431,7 +448,7 @@ function bind(){
     else{S.showP[b.dataset.id]=!S.showP[b.dataset.id];render();}
   }));
 
-  document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
+  document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{const entry=S.vault?.entries?.find(e=>e.id===b.dataset.id);if(entry){clip(entry.password);toast('Senha copiada!','s');}else{toast('Entrada não encontrada','e');}}));
   document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async e=>{
     e.stopPropagation();
     if(!confirm('Excluir esta senha?'))return;
@@ -458,9 +475,9 @@ function bind(){
       const elist=document.querySelector('.elist');
       if(!elist) return;
       if(list.length===0){elist.innerHTML=`<div class="empty">${q?'Nenhum resultado encontrado.':'Nenhuma senha aqui.'}</div>`;return;}
-      elist.innerHTML=list.map(en=>{const shown=S.showP[en.id];return`<div class="ecard" data-id="${en.id}"><div class="ehdr"><div class="elabel">${esc(en.label)}</div><div class="ebadge" style="${badgeStyle(en.owner)}">${esc(en.owner)}</div></div>${en.username?`<div class="euser">${esc(en.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(en.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${en.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-pw="${esc(en.password)}">📋</button><button class="ibtn-sm bdl" data-id="${en.id}">🗑️</button></div></div></div>`;}).join('');
+      elist.innerHTML=list.map(en=>{const shown=S.showP[en.id];return`<div class="ecard" data-id="${en.id}"><div class="ehdr"><div class="elabel">${esc(en.label)}</div><div class="ebadge" style="${badgeStyle(en.owner)}">${esc(en.owner)}</div></div>${en.username?`<div class="euser">${esc(en.username)}</div>`:'<div style="height:4px"></div>'}<div class="epwdr"><span class="epwd">${shown?esc(en.password):'• • • • • • • •'}</span><div class="eacts"><button class="ibtn-sm bey" data-id="${en.id}">${shown?'🙈':'👁️'}</button><button class="ibtn-sm bcp" data-id="${en.id}">📋</button><button class="ibtn-sm bdl" data-id="${en.id}">🗑️</button></div></div></div>`;}).join('');
       // rebind botões da lista
-      document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{clip(b.dataset.pw);toast('Senha copiada!','s');}));
+      document.querySelectorAll('.bcp').forEach(b=>b.addEventListener('click',()=>{const entry=S.vault?.entries?.find(e=>e.id===b.dataset.id);if(entry){clip(entry.password);toast('Senha copiada!','s');}else{toast('Entrada não encontrada','e');}}));
       document.querySelectorAll('.bdl').forEach(b=>b.addEventListener('click',async ev=>{ev.stopPropagation();if(!confirm('Excluir esta senha?'))return;delE(b.dataset.id);await persist();toast('Senha removida','s');S.search='';render();}));
       document.querySelectorAll('.ecard').forEach(c=>c.addEventListener('click',ev=>{if(ev.target.closest('.eacts'))return;S.editId=c.dataset.id;S.screen='add';render();}));
       // botão X
@@ -611,6 +628,7 @@ function bind(){
 }
 
 init();
+})();
 </script>
 </body>
 </html>
